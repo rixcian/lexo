@@ -58,7 +58,9 @@ export function DeckDangerZone({
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogPopup>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete &ldquo;{deckName}&rdquo;?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Delete &ldquo;{deckName}&rdquo;?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               Every card and every review in this deck is removed. Type the deck
               name to confirm.
@@ -70,11 +72,14 @@ export function DeckDangerZone({
               onChange={(event) => setConfirmText(event.target.value)}
               placeholder={deckName}
               aria-label="Type the deck name to confirm"
-              className="h-12 rounded-xl border-2"
+              size="duo"
+              className="rounded-xl border-2"
             />
           </div>
           <AlertDialogFooter>
-            <AlertDialogClose render={<Button variant="duo-secondary" size="duo-sm" />}>
+            <AlertDialogClose
+              render={<Button variant="duo-secondary" size="duo-sm" />}
+            >
               Keep it
             </AlertDialogClose>
             <Button

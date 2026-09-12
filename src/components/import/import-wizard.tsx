@@ -97,8 +97,7 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
 
     startWork(async () => {
       const result = await confirmImportAction(preview.token, {
-        targetDeckId:
-          targetDeckId === "new" ? undefined : Number(targetDeckId),
+        targetDeckId: targetDeckId === "new" ? undefined : Number(targetDeckId),
         mergeInto:
           targetDeckId !== "new"
             ? undefined
@@ -131,7 +130,9 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
   }
 
   if (summaries) {
-    return <ImportDone summaries={summaries} onAgain={() => setSummaries(null)} />;
+    return (
+      <ImportDone summaries={summaries} onAgain={() => setSummaries(null)} />
+    );
   }
 
   if (!preview) {
@@ -190,7 +191,9 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
-        <Pill tone="macaw">{preview.kind === "apkg" ? "Anki package" : "CSV"}</Pill>
+        <Pill tone="macaw">
+          {preview.kind === "apkg" ? "Anki package" : "CSV"}
+        </Pill>
         <span className="type-body-bold">{preview.filename}</span>
         <Pill tone="outline">{preview.totalNotes} cards found</Pill>
       </div>
@@ -217,7 +220,9 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
                 id="delimiter"
                 className={selectClass}
                 value={preview.csv.delimiter}
-                onChange={(event) => remapCsv({ delimiter: event.target.value })}
+                onChange={(event) =>
+                  remapCsv({ delimiter: event.target.value })
+                }
               >
                 {DELIMITER_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -243,7 +248,10 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {(["front", "back", "extra", "tags"] as const).map((field) => (
               <div key={field} className="grid gap-2">
-                <Label className="type-label capitalize" htmlFor={`col-${field}`}>
+                <Label
+                  className="type-label capitalize"
+                  htmlFor={`col-${field}`}
+                >
                   {field}
                 </Label>
                 <select
@@ -350,8 +358,7 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
           </label>
         ) : null}
 
-        {!importingToExisting &&
-        (preview.kind === "csv" || mergeApkg) ? (
+        {!importingToExisting && (preview.kind === "csv" || mergeApkg) ? (
           <div className="grid gap-2">
             <Label className="type-label" htmlFor="deck-name">
               Deck name
@@ -360,7 +367,8 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
               id="deck-name"
               value={deckName}
               onChange={(event) => setDeckName(event.target.value)}
-              className="h-12 rounded-xl border-2"
+              size="duo"
+              className="rounded-xl border-2"
             />
           </div>
         ) : null}
@@ -377,7 +385,8 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
                   value={frontLang}
                   onChange={(event) => setFrontLang(event.target.value)}
                   placeholder="Spanish"
-                  className="h-12 rounded-xl border-2"
+                  size="duo"
+                  className="rounded-xl border-2"
                 />
               </div>
               <div className="grid gap-2">
@@ -389,7 +398,8 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
                   value={backLang}
                   onChange={(event) => setBackLang(event.target.value)}
                   placeholder="English"
-                  className="h-12 rounded-xl border-2"
+                  size="duo"
+                  className="rounded-xl border-2"
                 />
               </div>
             </div>

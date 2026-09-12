@@ -37,7 +37,8 @@ export function NoteFields({
             autoFocus={autoFocus}
             defaultValue={defaults?.front}
             placeholder="el perro"
-            className="h-12 rounded-xl border-2"
+            size="duo"
+            className="rounded-xl border-2"
           />
         </div>
         <div className="grid gap-2">
@@ -50,7 +51,8 @@ export function NoteFields({
             required
             defaultValue={defaults?.back}
             placeholder="the dog"
-            className="h-12 rounded-xl border-2"
+            size="duo"
+            className="rounded-xl border-2"
           />
         </div>
       </div>
@@ -78,7 +80,8 @@ export function NoteFields({
           name="tags"
           defaultValue={defaults?.tags?.join(" ")}
           placeholder="animals noun a1"
-          className="h-12 rounded-xl border-2"
+          size="duo"
+          className="rounded-xl border-2"
         />
       </div>
     </>

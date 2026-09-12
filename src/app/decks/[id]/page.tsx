@@ -126,7 +126,10 @@ export default async function DeckPage({ params, searchParams }: PageProps) {
             </span>
           </h2>
 
-          <form className="flex items-center gap-2" action={`/decks/${deck.id}`}>
+          <form
+            className="flex items-center gap-2"
+            action={`/decks/${deck.id}`}
+          >
             <div className="relative">
               <Search
                 className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
@@ -137,7 +140,8 @@ export default async function DeckPage({ params, searchParams }: PageProps) {
                 defaultValue={q ?? ""}
                 placeholder="Search cards"
                 aria-label="Search cards"
-                className="h-11 rounded-xl border-2 pl-9"
+                size="duo-sm"
+                className="rounded-xl border-2 pl-9"
               />
             </div>
             <Button type="submit" variant="duo-secondary" size="duo-sm">

@@ -29,7 +29,8 @@ export function DeckForm({ action, deck, children }: DeckFormProps) {
           maxLength={80}
           defaultValue={deck?.name}
           placeholder="Spanish - top 1000 verbs"
-          className="h-12 rounded-xl border-2"
+          size="duo"
+          className="rounded-xl border-2"
         />
       </div>
 
@@ -58,7 +59,8 @@ export function DeckForm({ action, deck, children }: DeckFormProps) {
             name="frontLang"
             defaultValue={deck?.frontLang}
             placeholder="Spanish"
-            className="h-12 rounded-xl border-2"
+            size="duo"
+            className="rounded-xl border-2"
           />
         </div>
         <div className="grid gap-2">
@@ -70,7 +72,8 @@ export function DeckForm({ action, deck, children }: DeckFormProps) {
             name="backLang"
             defaultValue={deck?.backLang}
             placeholder="English"
-            className="h-12 rounded-xl border-2"
+            size="duo"
+            className="rounded-xl border-2"
           />
         </div>
       </div>
@@ -116,7 +119,8 @@ export function DeckForm({ action, deck, children }: DeckFormProps) {
             min={0}
             max={9999}
             defaultValue={deck?.newPerDay ?? 20}
-            className="h-12 rounded-xl border-2"
+            size="duo"
+            className="rounded-xl border-2"
           />
         </div>
         <div className="grid gap-2">
@@ -130,7 +134,8 @@ export function DeckForm({ action, deck, children }: DeckFormProps) {
             min={0}
             max={9999}
             defaultValue={deck?.reviewsPerDay ?? 200}
-            className="h-12 rounded-xl border-2"
+            size="duo"
+            className="rounded-xl border-2"
           />
         </div>
       </div>
