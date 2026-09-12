@@ -69,6 +69,41 @@ deploy.
 > There is also no login, so keep it on the tailnet or the LAN - anyone who can
 > reach the port can read and edit your cards.
 
+### Adding it to a stack you already have
+
+It is just another service. Match your stack's conventions - a bind mount
+rather than a named volume, and a host port that is free:
+
+```yaml
+  # lexo - Spaced Repetition
+  lexo:
+    image: ghcr.io/rixcian/lexo:latest
+    container_name: lexo
+    ports:
+      - 3030:3000
+    environment:
+      - TZ=${TZ:-Europe/Prague}
+      - ANKI_DB_PATH=/data/anki.db
+    volumes:
+      - ${BASE_PATH}/lexo/data:/data
+    restart: unless-stopped
+```
+
+The image carries its own `HEALTHCHECK`, so there is nothing else to declare.
+
+**The one gotcha: bind mounts and ownership.** Unlike linuxserver-style images
+this one ignores `PUID`/`PGID` and runs fixed as uid 1000. Docker creates a
+missing host directory as root, and the app then cannot create its database -
+so create it yourself first:
+
+```bash
+mkdir -p "${BASE_PATH}/lexo/data" && sudo chown -R 1000:1000 "${BASE_PATH}/lexo/data"
+```
+
+If the directory is wrong, the container logs say exactly which uid owns what
+and what to run. Named volumes do not have this problem - they inherit the
+image's ownership.
+
 ### Local development
 
 ```bash

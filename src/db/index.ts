@@ -16,10 +16,47 @@ type Connection = {
   sqlite: Database.Database;
 };
 
+/**
+ * The usual cause of SQLITE_CANTOPEN is a bind mount the container user cannot
+ * write to - Docker creates a missing host directory as root, while the image
+ * runs as uid 1000. Turn that into an instruction instead of a stack trace.
+ */
+function mountDiagnostics(dir: string): string {
+  const uid = typeof process.getuid === "function" ? process.getuid() : null;
+  const gid = typeof process.getgid === "function" ? process.getgid() : null;
+
+  let owner = "does not exist";
+  try {
+    const stat = fs.statSync(dir);
+    const mode = (stat.mode & 0o777).toString(8);
+    owner = `owned by ${stat.uid}:${stat.gid}, mode ${mode}`;
+  } catch {
+    // Left as "does not exist".
+  }
+
+  return [
+    `[db] cannot open the database at ${DB_PATH}`,
+    `[db]   directory ${dir} is ${owner}`,
+    `[db]   this process runs as ${uid ?? "?"}:${gid ?? "?"}`,
+    `[db]   fix: chown -R ${uid ?? 1000}:${gid ?? 1000} <the host path mounted at ${dir}>`,
+    `[db]   on an SELinux host, add :z to the volume line as well`,
+    `[db]   or point ANKI_DB_PATH somewhere this user can write`,
+  ].join("\n");
+}
+
 function connect(): Connection {
-  fs.mkdirSync(/* turbopackIgnore: true */ path.dirname(DB_PATH), {
-    recursive: true,
-  });
+  const dir = path.dirname(DB_PATH);
+
+  try {
+    fs.mkdirSync(/* turbopackIgnore: true */ dir, { recursive: true });
+    // W_OK alone is not enough: SQLite also creates -wal and -shm siblings.
+    fs.accessSync(dir, fs.constants.W_OK | fs.constants.X_OK);
+  } catch {
+    console.error(mountDiagnostics(dir));
+    throw new Error(
+      `The database directory ${dir} is not writable by this user. See the log above.`,
+    );
+  }
 
   const connection = new Database(DB_PATH);
   // WAL keeps reads non-blocking while a study session writes review rows.
