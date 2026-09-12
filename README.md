@@ -1,8 +1,8 @@
 # lexo
 
 A self-hosted, installable flashcard app. Spaced repetition with FSRS, deck
-import from Anki `.apkg` (images and audio included) or plain CSV, and study
-stats - all backed by a single SQLite file you own.
+import and export in Anki `.apkg` (images and audio included) or plain CSV, and
+study stats - all backed by a single SQLite file you own.
 
 Language-agnostic: a deck is just a front, a back and two free-form language
 labels, so Spanish vocab, kanji and capital cities all live side by side.
@@ -178,6 +178,32 @@ plus the content hashes of its front/back media, so re-importing an updated
 file adds only what is new, and a picture deck whose cards share no text still
 deduplicates correctly.
 
+## Exporting decks
+
+Every deck can be taken back out, from its settings page.
+
+**`.apkg`** writes a schema 11 package: the last collection format that is
+plain SQLite rather than protobuf, and the one Anki still accepts and upgrades
+on the way in. It carries the notes, tags, a three-field note type with one or
+two card templates (matching the deck's own reverse setting), the media files,
+and the full review log.
+
+Scheduling is the lossy part. Anki's schema 11 columns are SM-2, so FSRS
+stability and difficulty have nowhere to go: review cards land with their
+interval and due date, and learning cards become reviews rather than being
+stranded mid-step. The revlog goes along too, which is what Anki's own FSRS
+needs to work the memory state out again.
+
+Note identity survives a round trip. A note's Anki guid is derived from the
+note itself, not randomised, so exporting the same deck twice and importing
+both times updates rather than duplicates.
+
+**`.csv`** writes the same four columns the importer reads - front, back,
+extra, tags - so a file exported here comes straight back in. It is text only:
+attachments are listed by filename, and a side that is *only* a picture gets
+its filenames in place of the missing text, so the row survives instead of
+being silently dropped.
+
 ## Images and audio
 
 Media is stored content-addressed: a file is keyed by the SHA-256 of its bytes,
@@ -256,6 +282,7 @@ src/
     stats.ts               every statistic, computed from the review log
     media/                 content-addressed image / audio store
     import/                CSV and .apkg parsers, staging, ingestion
+    export/                CSV and .apkg writers, Anki schema 11
 drizzle/                   generated SQL migrations (shipped in the image)
 ```
 

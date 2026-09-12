@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, count, desc, eq, gt, gte, inArray, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { cards, decks, notes, reviews, type Deck } from "@/db/schema";
+import { cards, decks, noteMedia, notes, reviews, type Deck } from "@/db/schema";
 import { endOfStudyDay, startOfStudyDay } from "@/lib/day";
 import { noteMediaMaps } from "@/lib/media/store";
 import { emptyMediaMap, type AttachedMedia, type NoteMediaMap } from "@/lib/media/types";
@@ -334,6 +334,18 @@ export function browseCards(deckId: number, filters: BrowseFilters = {}) {
 
 export function getNote(noteId: number) {
   return db.select().from(notes).where(eq(notes.id, noteId)).get();
+}
+
+/** Distinct media files the notes of one deck reference. */
+export function deckMediaCount(deckId: number): number {
+  return (
+    db
+      .select({ n: sql<number>`count(distinct ${noteMedia.mediaId})` })
+      .from(noteMedia)
+      .innerJoin(notes, eq(noteMedia.noteId, notes.id))
+      .where(eq(notes.deckId, deckId))
+      .get()?.n ?? 0
+  );
 }
 
 export function getNoteMedia(noteId: number): NoteMediaMap {
