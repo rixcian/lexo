@@ -1,0 +1,26 @@
+services:
+  lexo:
+    build:
+      context: .
+    image: lexo:latest
+    container_name: lexo
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      # The study day rolls over at 04:00 in THIS timezone - set it to yours or
+      # streaks will break at the wrong hour.
+      TZ: ${TZ:-Europe/Prague}
+      ANKI_DB_PATH: /data/anki.db
+    volumes:
+      # Your entire collection lives in this one SQLite file.
+      - lexo-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  lexo-data:

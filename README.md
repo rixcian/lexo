@@ -1,36 +1,147 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# lexo
 
-## Getting Started
+A self-hosted, installable flashcard app. Spaced repetition with FSRS, deck
+import from Anki `.apkg` or plain CSV, and study stats - all backed by a single
+SQLite file you own.
 
-First, run the development server:
+Language-agnostic: a deck is just a front, a back and two free-form language
+labels, so Spanish vocab, kanji and capital cities all live side by side.
+
+## Stack
+
+| Piece | Choice |
+|---|---|
+| Framework | Next.js 16 (App Router, Turbopack, server actions) |
+| UI | [coss.com/ui](https://coss.com/ui) (Base UI + Tailwind CSS v4), re-themed |
+| Design system | `DESIGN.md` - the Duolingo spec, treated as the source of truth |
+| Database | SQLite via better-sqlite3 + Drizzle ORM |
+| Scheduler | [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) |
+| Packaging | Multi-stage Dockerfile, standalone Next output |
+
+## Running it
+
+### Docker (how you will actually run it)
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose up -d --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open <http://localhost:3000>. The collection lives in the `lexo-data`
+volume at `/data/anki.db`; migrations run automatically on first boot.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Set `TZ` in `.env` (see `.env.example`) to your own timezone - the study day
+rolls over at 04:00 local time, and streaks depend on it.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Local development
 
-## Learn More
+```bash
+npm install
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+The database is created at `./data/anki.db` on first request.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Script | What it does |
+|---|---|
+| `npm run dev` | Dev server on :3000 |
+| `npm run build` / `npm start` | Production build and serve |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint |
+| `npm run db:generate` | Regenerate SQL migrations after editing `src/db/schema.ts` |
+| `npm run db:studio` | Drizzle Studio against the local DB |
+| `npm run icons` | Re-rasterize the PWA icons from `public/icons/icon.svg` |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Importing decks
 
-## Deploy on Vercel
+**CSV / TSV** - a `front` and a `back` column are all that is required;
+`extra` and `tags` are optional. The header row is optional too, and the
+separator, header flag and column mapping can all be corrected in the UI after
+uploading. There is a sample at [`examples/spanish-starter.csv`](examples/spanish-starter.csv).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```csv
+front,back,extra,tags
+el perro,the dog,El perro corre por el parque.,animals noun
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Anki `.apkg`** - both the plain-SQLite collections (`collection.anki2`,
+`collection.anki21`) and the zstd-compressed `collection.anki21b` written by
+modern Anki are read. Deck hierarchy is preserved as `Parent::Child`, field
+HTML is flattened to text, and each deck in the package can become its own deck
+here or be merged into one.
+
+Not imported: **media files** (images and `[sound:…]` references are stripped,
+and the UI tells you how many), note templates, and the original scheduling
+history - every imported card starts as New under this app's own scheduler.
+
+Imports are idempotent: a note is fingerprinted on its normalized front+back,
+so re-importing an updated file adds only what is new.
+
+## Scheduling
+
+Cards are scheduled with FSRS, the algorithm modern Anki defaults to. Each
+review records the full log row (rating, stability, difficulty, elapsed and
+scheduled days), which is what every statistic is computed from - nothing is
+cached or denormalized.
+
+- Four grades: Again / Hard / Good / Easy, keyboard `1`-`4`, `Space` to flip
+  and then `Space` again for Good.
+- Cards that come due within 20 minutes are replayed later in the same session,
+  the way Anki's learning steps work.
+- Per-deck daily caps for new cards and reviews; learning cards are never
+  capped, so a step always gets finished.
+
+## PWA
+
+The app is installable (manifest, maskable icons, standalone display). The
+service worker precaches the shell and static assets and falls back to an
+offline page for navigations.
+
+It deliberately does **not** cache card data: server-side SQLite is the single
+source of truth, so there is no second copy to drift or to resolve conflicts
+against. Reviewing needs the server reachable.
+
+## Data and backups
+
+Everything is one SQLite file. To back it up, stop the app and copy
+`anki.db` along with its `-wal` and `-shm` siblings:
+
+```bash
+docker compose stop
+docker run --rm -v lexo-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/lexo-backup.tar.gz -C /data .
+docker compose start
+```
+
+The Settings page shows the live database path.
+
+## Layout
+
+```
+src/
+  app/                     routes (home, decks, study, stats, import, settings)
+  components/
+    ui/                    coss.com/ui components (copy-paste, yours to edit)
+    duo/                   mascot, pills, deck card
+    study/                 session runner and confetti
+    stats/                 charts
+  db/                      drizzle schema + lazily-opened connection
+  lib/
+    scheduler.ts           ts-fsrs wrapper - the only place FSRS is touched
+    queries.ts             read paths (deck counts, queue building, browsing)
+    actions.ts             server actions (decks, notes, grading)
+    stats.ts               every statistic, computed from the review log
+    import/                CSV and .apkg parsers, staging, ingestion
+drizzle/                   generated SQL migrations (shipped in the image)
+```
+
+## Design
+
+`DESIGN.md` (the Duolingo spec) is the visual source of truth. The coss.com/ui
+token layer in `src/app/globals.css` is re-themed to it: Feather Green
+`#58cc02` as the only primary CTA color, the five-accent gamification
+vocabulary (streak orange, heart red, XP gold, Super purple, Macaw blue), and
+the signature flat-color drop shadow under every button - press translates 2px
+and trims the shadow, never fades opacity.
+
+Dark mode follows the brand's published dark guidance (section 12) rather than
+the light-only web rule, since a study app gets used at night.
