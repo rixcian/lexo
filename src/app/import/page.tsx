@@ -33,7 +33,8 @@ la casa,the house,,nouns a1`}
         </pre>
         <p className="type-caption mt-3 text-muted-foreground">
           The header row is optional - you can map columns by hand after
-          uploading. Media files inside an .apkg are not imported.
+          uploading. A CSV carries text only; images and audio come from an
+          .apkg, or you can attach them to a card yourself.
         </p>
       </section>
     </div>

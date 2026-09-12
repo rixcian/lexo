@@ -168,6 +168,8 @@ export function parseCsv(text: string, options: CsvOptions = {}): ParseResult {
       back,
       extra: pick(columns.extra),
       tags: normalizeTags(pick(columns.tags)),
+      // A CSV carries no files - only .apkg imports bring media along.
+      media: [],
     });
   }
 
@@ -179,5 +181,6 @@ export function parseCsv(text: string, options: CsvOptions = {}): ParseResult {
     source: "csv",
     decks: [{ name: options.deckName?.trim() || "Imported deck", notes: parsed }],
     warnings,
+    media: [],
   };
 }

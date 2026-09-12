@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, FileUp, Loader2, Upload } from "lucide-react";
+import { ArrowRight, FileUp, ImageIcon, Loader2, Upload } from "lucide-react";
 import { Pill } from "@/components/duo/chips";
 import { Mascot } from "@/components/duo/mascot";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import {
   uploadImportAction,
 } from "@/lib/import/actions";
 import type { ImportPreview } from "@/lib/import/preview-types";
-import type { ImportSummary } from "@/lib/import/types";
+import type { ImportSummary, ParsedNote } from "@/lib/import/types";
 import { DECK_COLORS, DECK_COLOR_CLASS, DECK_COLOR_LABEL } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 
@@ -196,12 +196,18 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
         </Pill>
         <span className="type-body-bold">{preview.filename}</span>
         <Pill tone="outline">{preview.totalNotes} cards found</Pill>
+        {preview.mediaFiles ? (
+          <Pill tone="macaw">
+            {preview.mediaFiles} media file{preview.mediaFiles === 1 ? "" : "s"}
+            {preview.mediaBytes ? ` (${formatBytes(preview.mediaBytes)})` : ""}
+          </Pill>
+        ) : null}
       </div>
 
       {preview.warnings.map((warning) => (
         <p
           key={warning}
-          className="type-body-sm rounded-xl border-l-4 border-streak bg-bg-warm px-4 py-3 text-[#4b4b4b]"
+          className="type-body-sm rounded-xl border-l-4 border-streak bg-bg-warm px-4 py-3 text-foreground"
         >
           {warning}
         </p>
@@ -301,10 +307,10 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
                   className="type-body-sm flex gap-3 rounded-lg bg-secondary px-3 py-2"
                 >
                   <span className="min-w-0 flex-1 truncate font-bold">
-                    {note.front}
+                    {note.front || <MediaOnly note={note} field="front" />}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                    {note.back}
+                    {note.back || <MediaOnly note={note} field="back" />}
                   </span>
                 </li>
               ))}
@@ -473,6 +479,26 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
   );
 }
 
+/** Bytes as the smallest sensible unit - "342 KB" beats a rounded-up "1 MB". */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** Stands in for a side that is a picture or a clip rather than words. */
+function MediaOnly({ note, field }: { note: ParsedNote; field: "front" | "back" }) {
+  const attached = note.media.filter((ref) => ref.field === field);
+  if (attached.length === 0) return null;
+
+  return (
+    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+      <ImageIcon className="size-4" aria-hidden="true" />
+      {attached.length} attachment{attached.length === 1 ? "" : "s"}
+    </span>
+  );
+}
+
 function ErrorNote({ message }: { message: string }) {
   return (
     // Section 4: toast-style feedback - white bg, 3px left border in the role.
@@ -495,6 +521,7 @@ function ImportDone({
 }) {
   const created = summaries.reduce((n, s) => n + s.created, 0);
   const duplicates = summaries.reduce((n, s) => n + s.duplicates, 0);
+  const media = summaries.reduce((n, s) => n + s.mediaAttached, 0);
 
   return (
     <div className="flex flex-col items-center gap-6 py-10 text-center">
@@ -502,6 +529,12 @@ function ImportDone({
       <h2 className="type-h1 text-card-foreground">
         {created} card{created === 1 ? "" : "s"} added
       </h2>
+      {media > 0 ? (
+        <p className="type-body-lg text-muted-foreground">
+          {media} image{media === 1 ? "" : "s"} and audio clip
+          {media === 1 ? "" : "s"} came along.
+        </p>
+      ) : null}
       {duplicates > 0 ? (
         <p className="type-body-lg text-muted-foreground">
           {duplicates} duplicate{duplicates === 1 ? " was" : "s were"} skipped.

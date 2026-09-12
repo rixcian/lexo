@@ -1,16 +1,17 @@
 "use server";
 
+import fs from "node:fs";
 import { revalidatePath } from "next/cache";
 import { parseApkg } from "./apkg";
 import { parseCsv, previewCsv, type CsvOptions } from "./csv";
-import { ingest, type IngestOptions } from "./ingest";
+import { ingest, type IngestOptions, type MediaLoader } from "./ingest";
 import type {
   DeckPreview,
   ImportConfirmResult,
   ImportPreview,
   ImportPreviewResult,
 } from "./preview-types";
-import { discard, read, stage } from "./staging";
+import { discard, read, stage, stagedMediaPath } from "./staging";
 import type { ParseResult } from "./types";
 
 const MAX_BYTES = 64 * 1024 * 1024;
@@ -85,6 +86,8 @@ export async function uploadImportAction(
           warnings: result.warnings,
           totalNotes: result.decks.reduce((n, d) => n + d.notes.length, 0),
           decks: toDeckPreviews(result),
+          mediaFiles: result.media.length,
+          mediaBytes: result.media.reduce((n, file) => n + file.size, 0),
         },
       };
     }
@@ -138,7 +141,20 @@ export async function confirmImportAction(
         ? parseCsv(staged.text, options.csv ?? {})
         : staged.result;
 
-    const summaries = ingest(result, options);
+    // Media waits in the staging directory until the user commits to the
+    // import, so a preview the user walks away from leaves nothing behind.
+    const loadMedia: MediaLoader =
+      staged.kind === "apkg"
+        ? (file) => {
+            try {
+              return fs.readFileSync(stagedMediaPath(token, file.hash));
+            } catch {
+              return null;
+            }
+          }
+        : () => null;
+
+    const summaries = ingest(result, options, loadMedia);
     discard(token);
 
     revalidatePath("/");

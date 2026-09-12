@@ -4,8 +4,17 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { unzipSync } from "fflate";
 import { decompress as zstdDecompress } from "fzstd";
+import { readMediaFile, readMediaManifest } from "./apkg-media";
 import { normalizeTags, stripAnkiHtml } from "./text";
-import type { ParsedDeck, ParsedNote, ParseResult } from "./types";
+import type {
+  NoteMediaRef,
+  ParsedDeck,
+  ParsedMediaFile,
+  ParsedNote,
+  ParseResult,
+} from "./types";
+import { resolveMime, sha256 } from "@/lib/media/store";
+import type { MediaField } from "@/lib/media/types";
 
 /** Anki separates the fields of a note with the unit separator, 0x1f. */
 const FIELD_SEPARATOR = "\u001f";
@@ -36,8 +45,10 @@ interface AnkiCardRow {
  * the zstd-compressed `collection.anki21b` written by modern Anki. Deck
  * hierarchy is flattened into "Parent::Child" names.
  *
- * Not imported: media files, note templates, and the original scheduling
- * history - every imported card starts as New under this app's FSRS scheduler.
+ * Images and audio referenced by a field are pulled out of the archive and
+ * attached to the note. Not imported: note templates and the original
+ * scheduling history - every card starts as New under this app's FSRS
+ * scheduler.
  */
 export function parseApkg(buffer: Buffer): ParseResult {
   const warnings: string[] = [];
@@ -87,19 +98,32 @@ export function parseApkg(buffer: Buffer): ParseResult {
       }
 
       const byDeck = new Map<string, ParsedNote[]>();
-      let droppedMedia = 0;
+      const collector = mediaCollector(files);
       let skipped = 0;
 
       for (const note of noteRows) {
         const fields = note.flds.split(FIELD_SEPARATOR);
-        const cleaned = fields.map((field) => {
-          const result = stripAnkiHtml(field);
-          droppedMedia += result.media;
-          return result.text;
-        });
+        const cleaned = fields.map((field) => stripAnkiHtml(field));
 
         const [front, back, ...rest] = cleaned;
-        if (!front?.trim() || !back?.trim()) {
+        if (!front || !back) {
+          skipped += 1;
+          continue;
+        }
+
+        // The first two fields are the question and the answer; everything
+        // after them is folded into the note. Media follows its own field.
+        const media: NoteMediaRef[] = [
+          ...collector.take(front.media, "front"),
+          ...collector.take(back.media, "back"),
+          ...collector.take(rest.flatMap((field) => field.media), "extra"),
+        ];
+
+        const hasSide = (side: (typeof cleaned)[number], field: string) =>
+          Boolean(side.text.trim()) || media.some((ref) => ref.field === field);
+
+        // A picture-only or audio-only side is a real card, not an empty one.
+        if (!hasSide(front, "front") || !hasSide(back, "back")) {
           skipped += 1;
           continue;
         }
@@ -110,17 +134,32 @@ export function parseApkg(buffer: Buffer): ParseResult {
 
         const bucket = byDeck.get(deckName) ?? [];
         bucket.push({
-          front: front.trim(),
-          back: back.trim(),
-          extra: rest.filter(Boolean).join("\n").trim(),
+          front: front.text.trim(),
+          back: back.text.trim(),
+          extra: rest
+            .map((field) => field.text)
+            .filter(Boolean)
+            .join("\n")
+            .trim(),
           tags: normalizeTags(note.tags ?? ""),
+          media,
         });
         byDeck.set(deckName, bucket);
       }
 
-      if (droppedMedia > 0) {
+      if (collector.missing() > 0) {
         warnings.push(
-          `${droppedMedia} image/audio reference(s) were removed - media is not imported.`,
+          `${collector.missing()} media reference(s) point at files that are not in the package.`,
+        );
+      }
+      if (collector.rejected() > 0) {
+        warnings.push(
+          `${collector.rejected()} attached file(s) were skipped - not a supported image or audio format.`,
+        );
+      }
+      if (collector.files.size > 0) {
+        warnings.push(
+          `${collector.files.size} image/audio file(s) will be imported with these cards.`,
         );
       }
       if (skipped > 0) {
@@ -133,13 +172,88 @@ export function parseApkg(buffer: Buffer): ParseResult {
         .map(([deckName, notes]) => ({ name: deckName, notes }))
         .sort((a, b) => b.notes.length - a.notes.length);
 
-      return { source: "apkg", decks, warnings };
+      return {
+        source: "apkg",
+        decks,
+        warnings,
+        media: [...collector.files.values()],
+      };
     } finally {
       source.close();
     }
   } finally {
     fs.rmSync(path.dirname(tempPath), { recursive: true, force: true });
   }
+}
+
+
+interface MediaCollector {
+  /** Every distinct file pulled out so far, keyed by content hash. */
+  readonly files: Map<string, ParsedMediaFile>;
+  /** Turns the filenames one field referenced into note attachments. */
+  take(filenames: string[], field: MediaField): NoteMediaRef[];
+  /** Referenced by a note but absent from the package. */
+  missing(): number;
+  /** Present, but not an image or audio format we can serve. */
+  rejected(): number;
+}
+
+/**
+ * Resolves the filenames a field referenced to files inside the archive,
+ * deduplicating by content so a pronunciation clip shared by fifty notes is
+ * read, hashed and carried once.
+ */
+function mediaCollector(archive: Record<string, Uint8Array>): MediaCollector {
+  const manifest = readMediaManifest(archive);
+  const files = new Map<string, ParsedMediaFile>();
+  /** Anki filename to hash, or null once we know it cannot be resolved. */
+  const resolved = new Map<string, string | null>();
+  let missing = 0;
+  let rejected = 0;
+
+  function load(filename: string): string | null {
+    const entry = manifest.get(filename);
+    const data = entry === undefined ? null : readMediaFile(archive, entry);
+    if (!data) {
+      missing += 1;
+      return null;
+    }
+
+    const mime = resolveMime(filename, data);
+    if (!mime) {
+      rejected += 1;
+      return null;
+    }
+
+    const hash = sha256(data);
+    if (!files.has(hash)) {
+      files.set(hash, { hash, filename, mime, size: data.length, data });
+    }
+    return hash;
+  }
+
+  function hashOf(filename: string): string | null {
+    const cached = resolved.get(filename);
+    if (cached !== undefined) return cached;
+
+    const hash = load(filename);
+    resolved.set(filename, hash);
+    return hash;
+  }
+
+  return {
+    files,
+    take(filenames, field) {
+      const refs: NoteMediaRef[] = [];
+      for (const filename of filenames) {
+        const hash = hashOf(filename);
+        if (hash) refs.push({ field, hash });
+      }
+      return refs;
+    },
+    missing: () => missing,
+    rejected: () => rejected,
+  };
 }
 
 /**

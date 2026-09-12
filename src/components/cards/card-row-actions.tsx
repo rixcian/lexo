@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toastManager } from "@/components/ui/toast";
+import { emptyMediaMap, type NoteMediaMap } from "@/lib/media/types";
 import {
   deleteNoteAction,
   resetCardAction,
@@ -38,6 +39,7 @@ export interface CardRow {
   extra: string;
   tags: string[];
   suspended: boolean;
+  media?: NoteMediaMap;
 }
 
 export function CardRowActions({ row }: { row: CardRow }) {
@@ -129,7 +131,11 @@ export function CardRowActions({ row }: { row: CardRow }) {
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-5 px-6 py-2">
-              <NoteFields idPrefix={`edit-${row.noteId}`} defaults={row} />
+              <NoteFields
+                idPrefix={`edit-${row.noteId}`}
+                defaults={row}
+                media={row.media ?? emptyMediaMap()}
+              />
             </div>
             <DialogFooter>
               <DialogClose render={<Button variant="duo-secondary" size="duo-sm" />}>
@@ -148,7 +154,8 @@ export function CardRowActions({ row }: { row: CardRow }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this card?</AlertDialogTitle>
             <AlertDialogDescription>
-              &ldquo;{row.front}&rdquo; and its review history go away for good.
+              &ldquo;{row.front || row.back}&rdquo; and its review history go away
+              for good.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

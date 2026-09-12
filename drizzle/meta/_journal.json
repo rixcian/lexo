@@ -8,6 +8,13 @@
       "when": 1789234553743,
       "tag": "0000_absent_mockingbird",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789241833132,
+      "tag": "0001_wooden_vulture",
+      "breakpoints": true
     }
   ]
 }

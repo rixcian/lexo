@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Home, X } from "lucide-react";
+import { CardAudio, CardImages } from "@/components/media/card-media";
 import { Confetti } from "@/components/study/confetti";
 import { Mascot } from "@/components/duo/mascot";
 import { Pill } from "@/components/duo/chips";
@@ -213,23 +214,35 @@ export function StudySession({
             className="flex w-full flex-col items-center gap-6 rounded-[24px] bg-card px-6 py-12 text-center shadow-card"
             aria-live="polite"
           >
-            <p className="type-display-lg max-w-full break-words text-balance text-card-foreground max-sm:text-[40px] max-sm:leading-[1.1]">
-              {card.front}
-            </p>
+            <CardImages media={card.frontMedia} max={5} />
+            {/* A picture-only card has nothing to print here. */}
+            {card.front ? (
+              <p className="type-display-lg max-w-full break-words text-balance text-card-foreground max-sm:text-[40px] max-sm:leading-[1.1]">
+                {card.front}
+              </p>
+            ) : null}
+            {/* Keyed on the card so moving on remounts it and replays the sound. */}
+            <CardAudio key={`front-${card.cardId}`} media={card.frontMedia} autoPlay />
 
             {revealed ? (
               <div
                 className="flex w-full flex-col items-center gap-4 border-t-2 border-border pt-6"
                 style={{ animation: "duo-pop 200ms cubic-bezier(0.34,1.56,0.64,1)" }}
               >
-                <p className="type-h2 break-words text-balance text-brand">
-                  {card.back}
-                </p>
+                <CardImages media={card.backMedia} max={4} />
+                {card.back ? (
+                  <p className="type-h2 break-words text-balance text-brand">
+                    {card.back}
+                  </p>
+                ) : null}
+                <CardAudio media={card.backMedia} autoPlay />
                 {card.extra ? (
                   <p className="type-body max-w-[520px] whitespace-pre-line text-muted-foreground">
                     {card.extra}
                   </p>
                 ) : null}
+                <CardImages media={card.extraMedia} max={3} />
+                <CardAudio media={card.extraMedia} />
                 {backLang ? (
                   <span className="type-caption text-muted-foreground">
                     {backLang}

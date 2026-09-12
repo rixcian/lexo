@@ -7,7 +7,7 @@
  * fall back to a cached offline page, never to stale card data.
  */
 
-const VERSION = "lexo-v1";
+const VERSION = "lexo-v2";
 const SHELL_CACHE = `${VERSION}-shell`;
 const ASSET_CACHE = `${VERSION}-assets`;
 
@@ -48,7 +48,12 @@ function isStaticAsset(url) {
   return (
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
-    /\.(?:css|js|woff2?|png|svg|jpg|jpeg|webp|ico)$/.test(url.pathname)
+    // Card media is content-addressed under /api/media/<sha256>.<ext>, so it
+    // is as immutable as a hashed build asset and caches the same way.
+    url.pathname.startsWith("/api/media/") ||
+    /\.(?:css|js|woff2?|png|svg|jpg|jpeg|webp|ico|gif|avif|mp3|ogg|oga|opus|wav|m4a|aac|flac|weba)$/.test(
+      url.pathname,
+    )
   );
 }
 
@@ -59,6 +64,10 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
+  // An <audio> element asks for byte ranges; a 206 cannot go into the cache,
+  // so those go straight to the network.
+  if (request.headers.has("range")) return;
+
   // Hashed build output never changes - serve it from cache first.
   if (isStaticAsset(url)) {
     event.respondWith(
@@ -66,7 +75,8 @@ self.addEventListener("fetch", (event) => {
         (hit) =>
           hit ??
           fetch(request).then((response) => {
-            if (response.ok) {
+            // Only a complete 200 is storable - `ok` is also true for a 206.
+            if (response.status === 200) {
               const copy = response.clone();
               caches.open(ASSET_CACHE).then((cache) => cache.put(request, copy));
             }

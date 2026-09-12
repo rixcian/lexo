@@ -23,24 +23,47 @@ export function decodeEntities(input: string): string {
 
 export interface StripResult {
   text: string;
-  /** Number of media references (images / audio) that were dropped. */
-  media: number;
+  /** Media filenames the field referenced, in the order they appeared. */
+  media: string[];
+}
+
+/** `src="a.jpg"`, `src='a.jpg'` and bare `src=a.jpg` all occur in the wild. */
+const IMG_SOURCE = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
+
+/**
+ * Anki stores media under a plain filename, but the field may have it escaped
+ * as HTML and percent-encoded on top.
+ */
+function normalizeMediaName(raw: string): string {
+  const decoded = decodeEntities(raw).trim();
+  try {
+    return decodeURIComponent(decoded);
+  } catch {
+    // A stray % that is not an escape - the raw name is the best guess.
+    return decoded;
+  }
 }
 
 /**
- * Anki fields are HTML. We keep the text and the line structure and drop the
- * markup, since this app stores plain text and does not import media files.
+ * Anki fields are HTML. We keep the text and the line structure, drop the
+ * markup, and collect the media filenames so the importer can pull those files
+ * out of the package and attach them to the note.
  */
 export function stripAnkiHtml(input: string): StripResult {
-  let media = 0;
+  const media: string[] = [];
+  const remember = (name: string) => {
+    const clean = normalizeMediaName(name);
+    if (clean && !media.includes(clean)) media.push(clean);
+  };
 
-  let out = input.replace(/\[sound:[^\]]*\]/gi, () => {
-    media += 1;
+  let out = input.replace(/\[sound:([^\]]*)\]/gi, (_match, name: string) => {
+    remember(name);
     return "";
   });
 
-  out = out.replace(/<img\b[^>]*>/gi, () => {
-    media += 1;
+  out = out.replace(/<img\b[^>]*>/gi, (tag) => {
+    const source = IMG_SOURCE.exec(tag);
+    if (source) remember(source[1] ?? source[2] ?? source[3] ?? "");
     return "";
   });
 

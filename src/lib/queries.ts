@@ -4,6 +4,8 @@ import { and, asc, count, desc, eq, gt, gte, inArray, lte, ne, sql } from "drizz
 import { db } from "@/db";
 import { cards, decks, notes, reviews, type Deck } from "@/db/schema";
 import { endOfStudyDay, startOfStudyDay } from "@/lib/day";
+import { noteMediaMaps } from "@/lib/media/store";
+import { emptyMediaMap, type AttachedMedia, type NoteMediaMap } from "@/lib/media/types";
 import { formatInterval, State } from "@/lib/scheduler";
 
 export interface DeckCounts {
@@ -138,6 +140,11 @@ export interface SessionCard {
   back: string;
   extra: string;
   tags: string[];
+  /** Images and audio for the side being asked. */
+  frontMedia: AttachedMedia[];
+  /** Images and audio for the answer side, plus anything on `extra`. */
+  backMedia: AttachedMedia[];
+  extraMedia: AttachedMedia[];
   /** Raw ts-fsrs card state. */
   due: number;
   stability: number;
@@ -151,10 +158,13 @@ export interface SessionCard {
   lastReview: number | null;
 }
 
-function toSessionCard(row: {
-  card: typeof cards.$inferSelect;
-  note: typeof notes.$inferSelect;
-}): SessionCard {
+function toSessionCard(
+  row: {
+    card: typeof cards.$inferSelect;
+    note: typeof notes.$inferSelect;
+  },
+  media: NoteMediaMap = emptyMediaMap(),
+): SessionCard {
   const { card, note } = row;
   const reversed = card.template === "reverse";
   return {
@@ -166,6 +176,10 @@ function toSessionCard(row: {
     back: reversed ? note.front : note.back,
     extra: note.extra,
     tags: safeTags(note.tags),
+    // A reverse card asks the back, so its media swaps with the front's.
+    frontMedia: reversed ? media.back : media.front,
+    backMedia: reversed ? media.front : media.back,
+    extraMedia: media.extra,
     due: card.due,
     stability: card.stability,
     difficulty: card.difficulty,
@@ -207,8 +221,7 @@ export function buildQueue(deck: Deck, now = new Date()): SessionCard[] {
           .where(where)
           .orderBy(order)
           .limit(limit)
-          .all()
-          .map(toSessionCard);
+          .all();
 
   const base = and(
     eq(cards.deckId, deck.id),
@@ -227,15 +240,19 @@ export function buildQueue(deck: Deck, now = new Date()): SessionCard[] {
     asc(cards.id),
   );
 
-  return interleave([...learning, ...review], fresh);
+  const rows = interleave([...learning, ...review], fresh);
+
+  // One query for the whole queue rather than one per card.
+  const media = noteMediaMaps(rows.map((row) => row.note.id));
+  return rows.map((row) => toSessionCard(row, media[row.note.id]));
 }
 
 /** Spreads `extra` evenly through `main` while preserving both orders. */
-function interleave(main: SessionCard[], extra: SessionCard[]): SessionCard[] {
+function interleave<T>(main: T[], extra: T[]): T[] {
   if (extra.length === 0) return main;
   if (main.length === 0) return extra;
 
-  const out: SessionCard[] = [];
+  const out: T[] = [];
   const step = main.length / (extra.length + 1);
   let nextExtra = 0;
 
@@ -261,6 +278,7 @@ export interface BrowseRow {
   note: typeof notes.$inferSelect;
   /** Rendered here so the page component never has to read the clock. */
   dueLabel: string;
+  media: NoteMediaMap;
 }
 
 export function browseCards(deckId: number, filters: BrowseFilters = {}) {
@@ -288,7 +306,7 @@ export function browseCards(deckId: number, filters: BrowseFilters = {}) {
       .where(where)
       .get()?.n ?? 0;
 
-  const rows: BrowseRow[] = db
+  const pageRows = db
     .select({ card: cards, note: notes })
     .from(cards)
     .innerJoin(notes, eq(cards.noteId, notes.id))
@@ -296,22 +314,30 @@ export function browseCards(deckId: number, filters: BrowseFilters = {}) {
     .orderBy(asc(cards.due), asc(cards.id))
     .limit(perPage)
     .offset((page - 1) * perPage)
-    .all()
-    .map((row) => ({
-      ...row,
-      dueLabel:
-        row.card.state === State.New
-          ? "-"
-          : row.card.due <= now
-            ? "now"
-            : `in ${formatInterval(row.card.due - now)}`,
-    }));
+    .all();
+
+  const mediaByNote = noteMediaMaps(pageRows.map((row) => row.note.id));
+
+  const rows: BrowseRow[] = pageRows.map((row) => ({
+    ...row,
+    dueLabel:
+      row.card.state === State.New
+        ? "-"
+        : row.card.due <= now
+          ? "now"
+          : `in ${formatInterval(row.card.due - now)}`,
+    media: mediaByNote[row.note.id] ?? emptyMediaMap(),
+  }));
 
   return { rows, total, page, perPage, pages: Math.max(1, Math.ceil(total / perPage)) };
 }
 
 export function getNote(noteId: number) {
   return db.select().from(notes).where(eq(notes.id, noteId)).get();
+}
+
+export function getNoteMedia(noteId: number): NoteMediaMap {
+  return noteMediaMaps([noteId])[noteId] ?? emptyMediaMap();
 }
 
 /** Cards due per day for the next `days` days, for the forecast chart. */

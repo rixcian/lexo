@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { Search, Settings2, Sparkles } from "lucide-react";
 import { AddCardForm } from "@/components/cards/add-card-form";
 import { CardRowActions } from "@/components/cards/card-row-actions";
+import { MediaThumbnails } from "@/components/media/card-media";
 import { CountPills, Pill } from "@/components/duo/chips";
 import { Mascot } from "@/components/duo/mascot";
 import { Button } from "@/components/ui/button";
@@ -175,12 +176,20 @@ export default async function DeckPage({ params, searchParams }: PageProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {browse.rows.map(({ card, note, dueLabel }) => {
+                {browse.rows.map(({ card, note, dueLabel, media }) => {
+                  const reversed = card.template === "reverse";
+                  // A reverse card asks the back, so its media swaps too.
+                  const asked = reversed ? media.back : media.front;
+                  const answer = reversed ? media.front : media.back;
+
                   return (
                     <TableRow key={card.id}>
                       <TableCell className="max-w-[280px]">
-                        <span className="type-body-bold block truncate">
-                          {card.template === "reverse" ? note.back : note.front}
+                        <span className="flex items-center gap-2">
+                          <MediaThumbnails media={asked} />
+                          <span className="type-body-bold min-w-0 flex-1 truncate">
+                            {reversed ? note.back : note.front}
+                          </span>
                         </span>
                         {note.extra ? (
                           <span className="type-caption block truncate text-muted-foreground">
@@ -189,8 +198,11 @@ export default async function DeckPage({ params, searchParams }: PageProps) {
                         ) : null}
                       </TableCell>
                       <TableCell className="max-w-[280px]">
-                        <span className="block truncate">
-                          {card.template === "reverse" ? note.front : note.back}
+                        <span className="flex items-center gap-2">
+                          <MediaThumbnails media={answer} />
+                          <span className="min-w-0 flex-1 truncate">
+                            {reversed ? note.front : note.back}
+                          </span>
                         </span>
                       </TableCell>
                       <TableCell>
@@ -223,6 +235,7 @@ export default async function DeckPage({ params, searchParams }: PageProps) {
                             extra: note.extra,
                             tags: safeTags(note.tags),
                             suspended: card.suspended,
+                            media,
                           }}
                         />
                       </TableCell>

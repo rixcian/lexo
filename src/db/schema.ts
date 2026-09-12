@@ -65,6 +65,53 @@ export const notes = sqliteTable(
 );
 
 /**
+ * Content-addressed store for the images and audio clips attached to notes.
+ * `hash` is the sha256 of the bytes, so the same file imported from two decks
+ * is stored once; it doubles as the on-disk name and the URL segment.
+ */
+export const media = sqliteTable(
+  "media",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    hash: text("hash").notNull(),
+    /** Original name from the .apkg or the upload - shown, never trusted. */
+    filename: text("filename").notNull(),
+    mime: text("mime").notNull(),
+    bytes: integer("bytes").notNull(),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [uniqueIndex("media_hash_idx").on(t.hash)],
+);
+
+/**
+ * Attaches a media file to one field of a note. A field can hold several files
+ * and a file can be reused by many notes, so this stays a join table rather
+ * than columns on `notes`.
+ */
+export const noteMedia = sqliteTable(
+  "note_media",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    noteId: integer("note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    mediaId: integer("media_id")
+      .notNull()
+      .references(() => media.id, { onDelete: "cascade" }),
+    /** "front" | "back" | "extra" - the field the file belongs to. */
+    field: text("field").notNull(),
+    /** Order within the field. */
+    position: integer("position").notNull().default(0),
+  },
+  (t) => [
+    index("note_media_note_idx").on(t.noteId),
+    index("note_media_media_idx").on(t.mediaId),
+  ],
+);
+
+/**
  * One row per scheduled direction of a note. Columns mirror the `Card` shape
  * of ts-fsrs so conversion is a straight field map.
  */
@@ -145,3 +192,5 @@ export type Deck = typeof decks.$inferSelect;
 export type Note = typeof notes.$inferSelect;
 export type Card = typeof cards.$inferSelect;
 export type Review = typeof reviews.$inferSelect;
+export type Media = typeof media.$inferSelect;
+export type NoteMedia = typeof noteMedia.$inferSelect;

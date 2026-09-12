@@ -21,6 +21,9 @@ export interface ImportPreview {
   warnings: string[];
   totalNotes: number;
   decks: DeckPreview[];
+  /** Images and audio clips found in the package (.apkg only). */
+  mediaFiles?: number;
+  mediaBytes?: number;
   csv?: {
     delimiter: Delimiter;
     hasHeader: boolean;

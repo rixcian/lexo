@@ -1,8 +1,8 @@
 # lexo
 
 A self-hosted, installable flashcard app. Spaced repetition with FSRS, deck
-import from Anki `.apkg` or plain CSV, and study stats - all backed by a single
-SQLite file you own.
+import from Anki `.apkg` (images and audio included) or plain CSV, and study
+stats - all backed by a single SQLite file you own.
 
 Language-agnostic: a deck is just a front, a back and two free-form language
 labels, so Spanish vocab, kanji and capital cities all live side by side.
@@ -163,12 +163,37 @@ modern Anki are read. Deck hierarchy is preserved as `Parent::Child`, field
 HTML is flattened to text, and each deck in the package can become its own deck
 here or be merged into one.
 
-Not imported: **media files** (images and `[sound:…]` references are stripped,
-and the UI tells you how many), note templates, and the original scheduling
-history - every imported card starts as New under this app's own scheduler.
+**Images and audio come along.** `<img>` tags and `[sound:…]` references are
+pulled out of the package and attached to the field they came from, for both
+the legacy JSON media manifest and the protobuf one modern Anki writes. A card
+whose front is only a picture is imported as a picture card rather than
+skipped, and the preview says how many files and how much disk the package
+brings before you commit to it.
 
-Imports are idempotent: a note is fingerprinted on its normalized front+back,
-so re-importing an updated file adds only what is new.
+Not imported: note templates and the original scheduling history - every
+imported card starts as New under this app's own scheduler.
+
+Imports are idempotent: a note is fingerprinted on its normalized front+back
+plus the content hashes of its front/back media, so re-importing an updated
+file adds only what is new, and a picture deck whose cards share no text still
+deduplicates correctly.
+
+## Images and audio
+
+Media is stored content-addressed: a file is keyed by the SHA-256 of its bytes,
+so a pronunciation clip shared by fifty notes is kept once, and re-importing a
+deck costs nothing on disk. Files live next to the database (`/data/media` by
+default, overridable with `ANKI_MEDIA_DIR`), which means an existing `/data`
+volume already backs them up.
+
+- **Studying** - pictures render on the side they belong to and audio plays
+  itself when that side appears, the way Anki does, with a speaker button to
+  replay. A wordless side is fine: the image *is* the card.
+- **Your own cards** - the add and edit forms take images and audio per field
+  (up to 20 MB each). Attachments can be removed while editing; a file nothing
+  points at any more is deleted along with its row.
+- **Serving** - `/api/media/<sha256>.<ext>`, immutable and cached forever,
+  with byte-range support so `<audio>` seeks work in Safari.
 
 ## Scheduling
 
@@ -190,14 +215,18 @@ The app is installable (manifest, maskable icons, standalone display). The
 service worker precaches the shell and static assets and falls back to an
 offline page for navigations.
 
+Card media is cached the same way as build output - the URL contains the
+file's hash, so it can never go stale.
+
 It deliberately does **not** cache card data: server-side SQLite is the single
 source of truth, so there is no second copy to drift or to resolve conflicts
 against. Reviewing needs the server reachable.
 
 ## Data and backups
 
-Everything is one SQLite file. To back it up, stop the app and copy
-`anki.db` along with its `-wal` and `-shm` siblings:
+Everything is one SQLite file plus the `media/` directory beside it. To back it
+up, stop the app and copy `anki.db` with its `-wal` and `-shm` siblings and
+`media/` - the command below takes the whole volume, so it covers all of them:
 
 ```bash
 docker compose stop
@@ -217,6 +246,7 @@ src/
     ui/                    coss.com/ui components (copy-paste, yours to edit)
     duo/                   mascot, pills, deck card
     study/                 session runner and confetti
+    media/                 image and audio rendering for cards
     stats/                 charts
   db/                      drizzle schema + lazily-opened connection
   lib/
@@ -224,6 +254,7 @@ src/
     queries.ts             read paths (deck counts, queue building, browsing)
     actions.ts             server actions (decks, notes, grading)
     stats.ts               every statistic, computed from the review log
+    media/                 content-addressed image / audio store
     import/                CSV and .apkg parsers, staging, ingestion
 drizzle/                   generated SQL migrations (shipped in the image)
 ```
