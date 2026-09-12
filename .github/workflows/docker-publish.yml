@@ -27,6 +27,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # A tag that disagrees with package.json publishes a mislabelled image,
+      # which is very hard to notice later. Fail loudly instead.
+      - name: Check the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $pkg"
+            exit 1
+          fi
+          echo "version $pkg matches tag $GITHUB_REF_NAME"
+
       # Only needed for the emulated linux/arm64 build. Drop this step (and
       # arm64 from `platforms` below) if the server is x86 - it roughly halves
       # the build time.
@@ -44,9 +57,17 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # `latest` follows releases, not main, so the server never pulls a
+          # half-finished commit. Push to main gives you `edge` instead.
+          #   v0.1.0  ->  0.1.0, 0.1, latest, sha-<short>
+          #   main    ->  edge, sha-<short>
+          # {{major}} is deliberately absent: a bare `0` would span breaking
+          # changes while the project is pre-1.0.
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=edge,enable={{is_default_branch}}
             type=sha,format=short
 
       - uses: docker/build-push-action@v7

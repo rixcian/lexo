@@ -104,6 +104,28 @@ If the directory is wrong, the container logs say exactly which uid owns what
 and what to run. Named volumes do not have this problem - they inherit the
 image's ownership.
 
+### Releases and image tags
+
+`package.json` is the version of record; the git tag mirrors it. Cutting a
+release is two commands:
+
+```bash
+npm version minor --no-git-tag-version   # bumps package.json, e.g. 0.1.0 -> 0.2.0
+git commit -am "release: v0.2.0" && git tag -a v0.2.0 -m "v0.2.0" && git push --follow-tags
+```
+
+CI refuses to publish a tag that disagrees with `package.json`.
+
+| You push | Image tags |
+|---|---|
+| tag `v0.1.0` | `0.1.0`, `0.1`, `latest` |
+| commit to `main` | `edge` |
+| either | `sha-<short>` |
+
+So `latest` only ever moves when you cut a release - the server will not pull a
+half-finished commit. Track `edge` instead if you want every main build, or pin
+an exact version like `0.1.0` if you would rather upgrade by hand.
+
 ### Local development
 
 ```bash

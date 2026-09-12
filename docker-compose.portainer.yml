@@ -9,6 +9,8 @@
 
 services:
   lexo:
+    # `latest` tracks the newest release tag, not main. Pin a version
+    # (ghcr.io/rixcian/lexo:0.1.0) if you would rather upgrade deliberately.
     image: ghcr.io/rixcian/lexo:latest
     container_name: lexo
     restart: unless-stopped
