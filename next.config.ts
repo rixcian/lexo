@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   // better-sqlite3 is a native addon - it must stay outside the bundler.
   serverExternalPackages: ["better-sqlite3"],
 
+  // The floating dev badge overlaps the bottom-left of the UI; the error
+  // overlay still works without it.
+  devIndicators: false,
+
   experimental: {
     serverActions: {
       // Covers the images and audio attached to a single card. Deck files do

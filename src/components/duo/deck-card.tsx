@@ -23,7 +23,9 @@ export function DeckCard({ deck }: { deck: DeckWithCounts }) {
         <div className="min-w-0">
           <Link
             href={`/decks/${deck.id}`}
-            className="type-h3 block truncate text-card-foreground hover:underline focus-visible:ring-3 focus-visible:ring-macaw focus-visible:ring-offset-2 focus-visible:outline-none"
+            // Wrap to two lines rather than truncating: "Spanish - Core 1000"
+            // and "Capitals of the World" are ordinary names, not edge cases.
+            className="type-h3 line-clamp-2 block text-balance break-words text-card-foreground hover:underline focus-visible:ring-3 focus-visible:ring-macaw focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             {deck.name}
           </Link>

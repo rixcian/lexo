@@ -89,17 +89,22 @@ export function Heatmap({ days }: { days: DayBucket[] }) {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Columns flex to fill the card on a wide screen and fall back to a
+          scrollable 11px grid once there is no room left. */}
       <div className="overflow-x-auto pb-1">
-        <div className="flex gap-[3px]">
+        <div className="flex w-full gap-[3px]">
           {weeks.map((week, weekIndex) => (
-            <div key={weekIndex} className="flex flex-col gap-[3px]">
+            <div
+              key={weekIndex}
+              className="flex min-w-[11px] flex-1 flex-col gap-[3px]"
+            >
               {Array.from({ length: 7 }, (_, dayIndex) => {
                 const cell = week[dayIndex];
                 if (!cell) {
                   return (
                     <div
                       key={dayIndex}
-                      className="size-[11px] rounded-[3px] opacity-0"
+                      className="aspect-square w-full rounded-[3px] opacity-0"
                     />
                   );
                 }
@@ -108,7 +113,7 @@ export function Heatmap({ days }: { days: DayBucket[] }) {
                     key={cell.date}
                     title={`${cell.date}: ${cell.count} review${cell.count === 1 ? "" : "s"}`}
                     className={cn(
-                      "size-[11px] rounded-[3px]",
+                      "aspect-square w-full rounded-[3px]",
                       HEAT_LEVELS[heatLevel(cell.count, peak)],
                     )}
                   />

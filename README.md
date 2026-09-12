@@ -1,202 +1,138 @@
+<div align="center">
+
+<img src="docs/mascot.svg" width="112" alt="">
+
 # lexo
 
-A self-hosted, installable flashcard app. Spaced repetition with FSRS, deck
-import and export in Anki `.apkg` (images and audio included) or plain CSV, and
-study stats - all backed by a single SQLite file you own.
+**Self-hosted spaced repetition that works in any language.**
 
-Language-agnostic: a deck is just a front, a back and two free-form language
-labels, so Spanish vocab, kanji and capital cities all live side by side.
+FSRS scheduling, Anki and CSV import, and study stats that come straight from
+your own review log - all in a single SQLite file you own.
 
-## Stack
+[![Publish container image](https://github.com/rixcian/lexo/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/rixcian/lexo/actions/workflows/docker-publish.yml)
+[![ghcr.io](https://img.shields.io/badge/ghcr.io-rixcian%2Flexo-1cb0f6)](https://github.com/rixcian/lexo/pkgs/container/lexo)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-58cc02)](https://nextjs.org)
+[![FSRS](https://img.shields.io/badge/scheduler-FSRS-ff9600)](https://github.com/open-spaced-repetition/ts-fsrs)
 
-| Piece | Choice |
-|---|---|
-| Framework | Next.js 16 (App Router, Turbopack, server actions) |
-| UI | [coss.com/ui](https://coss.com/ui) (Base UI + Tailwind CSS v4), re-themed |
-| Design system | `DESIGN.md` - the Duolingo spec, treated as the source of truth |
-| Database | SQLite via better-sqlite3 + Drizzle ORM |
-| Scheduler | [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) |
-| Packaging | Multi-stage Dockerfile, standalone Next output |
+</div>
 
-## Running it
+![The deck list](docs/screenshots/home.png)
 
-### Docker (how you will actually run it)
+---
 
-```bash
-docker compose up -d --build
-```
+## What it is
 
-Then open <http://localhost:3000>. The collection lives in the `lexo-data`
-volume at `/data/anki.db`; migrations run automatically on first boot.
+A flashcard app for one person and one server. A deck is nothing more than a
+front, a back and two free-form language labels, so Spanish vocabulary, kanji
+readings and world capitals all sit side by side under the same scheduler.
 
-Set `TZ` in `.env` (see `.env.example`) to your own timezone - the study day
-rolls over at 04:00 local time, and streaks depend on it.
+- **FSRS, the algorithm modern Anki defaults to.** Four grades, learning steps
+  replayed inside the session, per-deck daily caps.
+- **Import what you already have.** Anki `.apkg` exports and plain CSV/TSV,
+  images and audio included, with duplicate detection so re-importing an
+  updated file is safe.
+- **Take it back out.** Any deck exports as an `.apkg` Anki can open, or as
+  CSV.
+- **Stats from the raw review log.** Nothing is cached or denormalised, so the
+  numbers are always the truth.
+- **Installable as a PWA.** Manifest, maskable icons, offline shell.
+- **One file to back up.** No Postgres, no Redis, no account, no cloud.
 
-### Portainer (a server you already run)
-
-Two free routes. Both keep the collection in a named `lexo-data` volume.
-
-**A. Pull a prebuilt image (recommended).** [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)
-builds on every push to `main` and pushes `ghcr.io/rixcian/lexo:latest` to the
-GitHub Container Registry - free for public repos, and the server never builds
-anything. After the first run, open the package on GitHub and set its
-visibility to **Public**, otherwise Portainer needs registry credentials.
-
-In Portainer: **Stacks -> Add stack -> Web editor**, paste
-[`docker-compose.portainer.yml`](docker-compose.portainer.yml), deploy. To
-update later, hit **Pull and redeploy** (or wire the stack's webhook into the
-workflow).
-
-**B. Let the server build from git.** In Portainer: **Stacks -> Add stack ->
-Repository**, point it at `https://github.com/rixcian/lexo`, compose path
-`docker-compose.yml`. Portainer clones the repo and builds on the box - no
-registry at all, but it needs roughly 2 GB of free RAM and a few minutes per
-deploy.
-
-> **HTTPS is what makes it installable.** Service workers and "Add to home
-> screen" only work in a secure context, so over plain `http://<server-ip>:3000`
-> the app runs but will not install as a PWA. On a tailnet the cheapest fix is
-> Tailscale's own certificate:
->
-> ```bash
-> tailscale serve --bg 3000
-> ```
->
-> That publishes `https://<host>.<tailnet>.ts.net` with a real Let's Encrypt
-> cert, and the app installs from there on a phone. Off the tailnet, terminate
-> TLS with Caddy, Traefik or a Cloudflare Tunnel instead.
->
-> There is also no login, so keep it on the tailnet or the LAN - anyone who can
-> reach the port can read and edit your cards.
-
-### Adding it to a stack you already have
-
-It is just another service. Match your stack's conventions - a bind mount
-rather than a named volume, and a host port that is free:
-
-```yaml
-  # lexo - Spaced Repetition
-  lexo:
-    image: ghcr.io/rixcian/lexo:latest
-    container_name: lexo
-    ports:
-      - 3030:3000
-    environment:
-      - TZ=${TZ:-Europe/Prague}
-      - ANKI_DB_PATH=/data/anki.db
-      - ANKI_MAX_UPLOAD_MB=100
-    volumes:
-      - ${BASE_PATH}/lexo/data:/data
-    restart: unless-stopped
-```
-
-The image carries its own `HEALTHCHECK`, so there is nothing else to declare.
-
-**The one gotcha: bind mounts and ownership.** Unlike linuxserver-style images
-this one ignores `PUID`/`PGID` and runs fixed as uid 1000. Docker creates a
-missing host directory as root, and the app then cannot create its database -
-so create it yourself first:
+## Quick start
 
 ```bash
-mkdir -p "${BASE_PATH}/lexo/data" && sudo chown -R 1000:1000 "${BASE_PATH}/lexo/data"
+docker run -d --name lexo -p 3000:3000 \
+  -e TZ=Europe/Prague \
+  -v lexo-data:/data \
+  ghcr.io/rixcian/lexo:latest
 ```
 
-If the directory is wrong, the container logs say exactly which uid owns what
-and what to run. Named volumes do not have this problem - they inherit the
-image's ownership.
+Open <http://localhost:3000>. Migrations run on first boot; there is nothing
+else to configure.
 
-### Releases and image tags
+Prefer compose? [`docker-compose.portainer.yml`](docker-compose.portainer.yml)
+is ready to paste into Portainer's web editor.
 
-`package.json` is the version of record; the git tag mirrors it. Cutting a
-release is two commands:
+> Set `TZ` to your own timezone. The study day rolls over at 04:00 local time,
+> and your streak depends on it.
 
-```bash
-npm version minor --no-git-tag-version   # bumps package.json, e.g. 0.1.0 -> 0.2.0
-git commit -am "release: v0.2.0" && git tag -a v0.2.0 -m "v0.2.0" && git push --follow-tags
-```
+## Screenshots
 
-CI refuses to publish a tag that disagrees with `package.json`.
+**Reviewing.** Four grades, each carrying the interval it would schedule.
+`Space` flips, `1`-`4` grade, and a card that comes due again within twenty
+minutes returns later in the same session.
 
-| You push | Image tags |
-|---|---|
-| tag `v0.1.0` | `0.1.0`, `0.1`, `latest` |
-| commit to `main` | `edge` |
-| either | `sha-<short>` |
+![A study session](docs/screenshots/study.png)
 
-So `latest` only ever moves when you cut a release - the server will not pull a
-half-finished commit. Track `edge` instead if you want every main build, or pin
-an exact version like `0.1.0` if you would rather upgrade by hand.
+**Stats.** A year of activity, the next thirty days of workload, where your
+cards sit in their lifecycle, and how you actually answered.
 
-### Local development
+![The stats page](docs/screenshots/stats.png)
 
-```bash
-npm install
-npm run dev
-```
+<table>
+<tr>
+<td width="50%">
 
-The database is created at `./data/anki.db` on first request.
+**Import** - deck hierarchy, HTML flattening, and an honest account of what was
+dropped.
 
-| Script | What it does |
-|---|---|
-| `npm run dev` | Dev server on :3000 |
-| `npm run build` / `npm start` | Production build and serve |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run lint` | ESLint |
-| `npm run db:generate` | Regenerate SQL migrations after editing `src/db/schema.ts` |
-| `npm run db:studio` | Drizzle Studio against the local DB |
-| `npm run icons` | Re-rasterize the PWA icons from `public/icons/icon.svg` |
+</td>
+<td width="50%">
+
+**Browse** - every card, searchable, with edit, suspend, reset and delete in
+reach.
+
+</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/import.png" alt="Importing an Anki package"></td>
+<td><img src="docs/screenshots/deck.png" alt="The card browser"></td>
+</tr>
+</table>
+
+**Dark mode**, following the brand's published dark guidance - because a study
+app gets used in bed.
+
+![The deck list in dark mode](docs/screenshots/home-dark.png)
 
 ## Importing decks
 
-**CSV / TSV** - a `front` and a `back` column are all that is required;
-`extra` and `tags` are optional. The header row is optional too, and the
-separator, header flag and column mapping can all be corrected in the UI after
-uploading. There is a sample at [`examples/spanish-starter.csv`](examples/spanish-starter.csv).
+**CSV / TSV** needs only a front and a back column; `extra` and `tags` are
+optional, and so is the header row. The separator, header flag and column
+mapping can all be corrected in the UI after uploading. There is a sample at
+[`examples/spanish-starter.csv`](examples/spanish-starter.csv).
 
 ```csv
 front,back,extra,tags
 el perro,the dog,El perro corre por el parque.,animals noun
 ```
 
-**Anki `.apkg`** - both the plain-SQLite collections (`collection.anki2`,
-`collection.anki21`) and the zstd-compressed `collection.anki21b` written by
-modern Anki are read. Deck hierarchy is preserved as `Parent::Child`, field
-HTML is flattened to text, and each deck in the package can become its own deck
-here or be merged into one.
+**Anki `.apkg`** works for both the plain-SQLite collections
+(`collection.anki2`, `collection.anki21`) and the zstd-compressed
+`collection.anki21b` written by modern Anki. Deck hierarchy is preserved as
+`Parent::Child`, field HTML is flattened to text, and each deck in the package
+can become its own deck here or be merged into one.
 
 **Images and audio come along.** `<img>` tags and `[sound:…]` references are
 pulled out of the package and attached to the field they came from, for both
 the legacy JSON media manifest and the protobuf one modern Anki writes. A card
 whose front is only a picture is imported as a picture card rather than
-skipped, and the preview says how many files and how much disk the package
-brings before you commit to it.
+skipped, and the preview says how many files the package brings before you
+commit to it.
 
 Not imported: note templates and the original scheduling history - every
 imported card starts as New under this app's own scheduler.
 
-Imports are idempotent: a note is fingerprinted on its normalized front+back
-plus the content hashes of its front/back media, so re-importing an updated
-file adds only what is new, and a picture deck whose cards share no text still
-deduplicates correctly.
+Imports are idempotent. A note is fingerprinted on its normalised front and
+back plus the content hashes of its front and back media, so re-importing an
+updated file adds only what is new, and a picture deck whose cards share no
+text still deduplicates correctly.
 
-### Upload size
-
-Deck files are capped at **100 MB** by default. Set `ANKI_MAX_UPLOAD_MB` to
-change it; the value is read per request, so a container restart is enough and
-no rebuild is involved.
-
-```yaml
-environment:
-  ANKI_MAX_UPLOAD_MB: 250
-```
-
-The upload goes to `POST /api/import` rather than a server action precisely so
-this stays tunable: an action's body cap lives in `next.config.ts`, which
-`next build` freezes into the standalone bundle, and a prebuilt image could
-never be re-tuned from its environment. A file over the limit is refused on its
-`Content-Length` before the body is read, and again on the real size once it
-has been, so a lying header buys nothing. The whole file is held in memory
-while it is parsed, so give the container headroom over whatever you set here.
+Deck files are capped at **100 MB**; see `ANKI_MAX_UPLOAD_MB` under
+[Configuration](#configuration). The upload goes to `POST /api/import` rather
+than a server action precisely so that stays tunable - an action's body cap
+lives in `next.config.ts`, which `next build` freezes into the standalone
+bundle, and a prebuilt image could never be re-tuned from its environment.
 
 ## Exporting decks
 
@@ -218,11 +154,10 @@ Note identity survives a round trip. A note's Anki guid is derived from the
 note itself, not randomised, so exporting the same deck twice and importing
 both times updates rather than duplicates.
 
-**`.csv`** writes the same four columns the importer reads - front, back,
-extra, tags - so a file exported here comes straight back in. It is text only:
-attachments are listed by filename, and a side that is *only* a picture gets
-its filenames in place of the missing text, so the row survives instead of
-being silently dropped.
+**`.csv`** writes the same four columns the importer reads, so a file exported
+here comes straight back in. It is text only: attachments are listed by
+filename, and a side that is *only* a picture gets its filenames in place of
+the missing text, so the row survives instead of being silently dropped.
 
 ## Images and audio
 
@@ -243,36 +178,106 @@ volume already backs them up.
 
 ## Scheduling
 
-Cards are scheduled with FSRS, the algorithm modern Anki defaults to. Each
-review records the full log row (rating, stability, difficulty, elapsed and
-scheduled days), which is what every statistic is computed from - nothing is
-cached or denormalized.
+Cards are scheduled with [FSRS](https://github.com/open-spaced-repetition/ts-fsrs).
+Every review appends a full log row - rating, stability, difficulty, elapsed and
+scheduled days - and every statistic is derived from that table.
 
-- Four grades: Again / Hard / Good / Easy, keyboard `1`-`4`, `Space` to flip
-  and then `Space` again for Good.
-- Cards that come due within 20 minutes are replayed later in the same session,
-  the way Anki's learning steps work.
-- Per-deck daily caps for new cards and reviews; learning cards are never
-  capped, so a step always gets finished.
+| | |
+|---|---|
+| Grades | Again / Hard / Good / Easy, keys `1`-`4` |
+| Flip | `Space` or `Enter`, then `Space` again for Good |
+| Learning steps | cards due within 20 minutes replay in the same session |
+| Daily caps | per deck, for new cards and reviews; learning is never capped |
+| Day rollover | 04:00 local, so a late night still counts as yesterday |
 
-## PWA
+Target retention is 0.9 and the maximum interval is 100 years. Both are shown
+on the Settings page.
 
-The app is installable (manifest, maskable icons, standalone display). The
-service worker precaches the shell and static assets and falls back to an
-offline page for navigations.
+## Deploying
 
-Card media is cached the same way as build output - the URL contains the
-file's hash, so it can never go stale.
+### Portainer
 
-It deliberately does **not** cache card data: server-side SQLite is the single
-source of truth, so there is no second copy to drift or to resolve conflicts
-against. Reviewing needs the server reachable.
+**Pull a prebuilt image (recommended).**
+[`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)
+builds `linux/amd64` and pushes to GHCR on every release - free for public
+repos, and the server never builds anything. ARM hosts need `linux/arm64`
+adding back to that workflow; it is left out because an emulated arm64 layer
+costs about five minutes a build. In Portainer:
+**Stacks → Add stack → Web editor**, paste
+[`docker-compose.portainer.yml`](docker-compose.portainer.yml), deploy.
+
+**Or let the server build from git.** **Stacks → Add stack → Repository**,
+pointed at this repo with compose path `docker-compose.yml`. No registry at
+all, but it needs roughly 2 GB of free RAM per deploy.
+
+### Adding it to a stack you already have
+
+It is just another service. Match your stack's conventions - a bind mount
+rather than a named volume, and a host port that is free:
+
+```yaml
+  # lexo - Spaced Repetition
+  lexo:
+    image: ghcr.io/rixcian/lexo:latest
+    container_name: lexo
+    ports:
+      - 3030:3000
+    environment:
+      - TZ=${TZ:-Europe/Prague}
+      - ANKI_DB_PATH=/data/anki.db
+    volumes:
+      - ${BASE_PATH}/lexo/data:/data
+    restart: unless-stopped
+```
+
+The image carries its own `HEALTHCHECK`, so there is nothing else to declare.
+
+> **Bind mounts and ownership.** Unlike linuxserver-style images this one
+> ignores `PUID`/`PGID` and runs fixed as uid 1000. Docker creates a missing
+> host directory as root, and the app then cannot create its database - so
+> create it yourself first:
+>
+> ```bash
+> mkdir -p "${BASE_PATH}/lexo/data" && sudo chown -R 1000:1000 "${BASE_PATH}/lexo/data"
+> ```
+>
+> If it is wrong, the container logs name the uid that owns the directory, the
+> uid the app runs as, and the command that fixes it. Named volumes do not have
+> this problem - they inherit the image's ownership.
+
+### HTTPS, and why you want it
+
+Service workers and "Add to home screen" only work in a secure context, so over
+plain `http://<server-ip>:3000` the app runs but **will not install as a PWA**.
+On a tailnet the cheapest fix is Tailscale's own certificate:
+
+```bash
+tailscale serve --bg 3000
+```
+
+That publishes `https://<host>.<tailnet>.ts.net` with a real Let's Encrypt
+certificate, and the app installs from there on a phone. Off the tailnet,
+terminate TLS with Caddy, Traefik or a Cloudflare Tunnel instead.
+
+**There is no login.** Keep it on the tailnet or the LAN - anyone who can reach
+the port can read and edit your cards.
+
+## Configuration
+
+| Variable | Default | What it does |
+|---|---|---|
+| `ANKI_DB_PATH` | `/data/anki.db` | Where the SQLite collection lives |
+| `ANKI_MIGRATIONS_DIR` | `/app/drizzle` | Folder holding the generated migrations |
+| `ANKI_MEDIA_DIR` | next to the database | Where card images and audio are stored |
+| `ANKI_MAX_UPLOAD_MB` | `100` | Largest deck file the importer accepts. Read per request, so a restart applies it - no rebuild |
+| `TZ` | container default | Sets the 04:00 study-day rollover |
+| `PORT` | `3000` | Port the server listens on |
 
 ## Data and backups
 
-Everything is one SQLite file plus the `media/` directory beside it. To back it
-up, stop the app and copy `anki.db` with its `-wal` and `-shm` siblings and
-`media/` - the command below takes the whole volume, so it covers all of them:
+Everything is one SQLite file plus the `media/` directory beside it. Stop the
+app and copy the database with its `-wal` and `-shm` siblings and `media/` -
+the command below takes the whole volume, so it covers all of them:
 
 ```bash
 docker compose stop
@@ -283,13 +288,61 @@ docker compose start
 
 The Settings page shows the live database path.
 
-## Layout
+## PWA behaviour
+
+The service worker precaches the shell and static assets, and falls back to an
+offline page for navigations. Card media is cached the same way as build
+output - the URL contains the file's hash, so it can never go stale. It
+deliberately does **not** cache card data:
+server-side SQLite is the single source of truth, so there is no second copy to
+drift or to reconcile. Reviewing needs the server reachable.
+
+## Development
+
+```bash
+npm install
+npm run dev
+```
+
+The database is created at `./data/anki.db` on first request.
+
+| Script | What it does |
+|---|---|
+| `npm run dev` | Dev server on :3000 |
+| `npm run build` / `npm start` | Production build and serve |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint |
+| `npm run db:generate` | Regenerate migrations after editing `src/db/schema.ts` |
+| `npm run db:studio` | Drizzle Studio against the local database |
+| `npm run icons` | Re-rasterise the PWA icons from `public/icons/icon.svg` |
+
+### Releases and image tags
+
+`package.json` is the version of record; the git tag mirrors it, and CI refuses
+to publish a tag that disagrees with it.
+
+```bash
+npm version minor --no-git-tag-version
+git commit -am "release: v0.2.0" && git tag -a v0.2.0 -m "v0.2.0" && git push --follow-tags
+```
+
+| You push | Image tags |
+|---|---|
+| tag `v0.1.0` | `0.1.0`, `0.1`, `latest` |
+| commit to `main` | `edge` |
+| either | `sha-<short>` |
+
+`latest` only moves when you cut a release, so the server will never pull a
+half-finished commit. Track `edge` for every main build, or pin an exact
+version to upgrade by hand.
+
+### Layout
 
 ```
 src/
   app/                     routes (home, decks, study, stats, import, settings)
   components/
-    ui/                    coss.com/ui components (copy-paste, yours to edit)
+    ui/                    coss.com/ui components - copy-paste, yours to edit
     duo/                   mascot, pills, deck card
     study/                 session runner and confetti
     media/                 image and audio rendering for cards
@@ -303,17 +356,27 @@ src/
     media/                 content-addressed image / audio store
     import/                CSV and .apkg parsers, staging, ingestion
     export/                CSV and .apkg writers, Anki schema 11
-drizzle/                   generated SQL migrations (shipped in the image)
+drizzle/                   generated SQL migrations, shipped in the image
 ```
+
+## Built with
+
+| Piece | Choice |
+|---|---|
+| Framework | Next.js 16 - App Router, Turbopack, server actions |
+| UI | [coss.com/ui](https://coss.com/ui) - Base UI + Tailwind CSS v4, re-themed |
+| Database | SQLite via better-sqlite3 + Drizzle ORM |
+| Scheduler | [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) |
+| Packaging | Multi-stage Dockerfile, standalone Next output |
 
 ## Design
 
-`DESIGN.md` (the Duolingo spec) is the visual source of truth. The coss.com/ui
+[`DESIGN.md`](DESIGN.md) is the visual source of truth, and the coss.com/ui
 token layer in `src/app/globals.css` is re-themed to it: Feather Green
-`#58cc02` as the only primary CTA color, the five-accent gamification
-vocabulary (streak orange, heart red, XP gold, Super purple, Macaw blue), and
-the signature flat-color drop shadow under every button - press translates 2px
-and trims the shadow, never fades opacity.
+`#58cc02` as the only primary CTA colour, a five-accent gamification vocabulary
+(streak orange, heart red, XP gold, Super purple, Macaw blue), and the
+signature flat-colour drop shadow under every button - press translates it 2px
+and trims the shadow rather than fading opacity.
 
-Dark mode follows the brand's published dark guidance (section 12) rather than
-the light-only web rule, since a study app gets used at night.
+Dark mode follows the brand's published dark guidance in section 12 rather than
+the light-only web rule.
