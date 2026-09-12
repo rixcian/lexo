@@ -29,7 +29,10 @@ readings and world capitals all sit side by side under the same scheduler.
 - **FSRS, the algorithm modern Anki defaults to.** Four grades, learning steps
   replayed inside the session, per-deck daily caps.
 - **Import what you already have.** Anki `.apkg` exports and plain CSV/TSV,
-  with duplicate detection so re-importing an updated file is safe.
+  images and audio included, with duplicate detection so re-importing an
+  updated file is safe.
+- **Take it back out.** Any deck exports as an `.apkg` Anki can open, or as
+  CSV.
 - **Stats from the raw review log.** Nothing is cached or denormalised, so the
   numbers are always the truth.
 - **Installable as a PWA.** Manifest, maskable icons, offline shell.
@@ -110,12 +113,68 @@ el perro,the dog,El perro corre por el parque.,animals noun
 `Parent::Child`, field HTML is flattened to text, and each deck in the package
 can become its own deck here or be merged into one.
 
-Not imported: **media files** (images and `[sound:…]` references are stripped,
-and the UI tells you how many), note templates, and the original scheduling
-history - every imported card starts as New under this app's own scheduler.
+**Images and audio come along.** `<img>` tags and `[sound:…]` references are
+pulled out of the package and attached to the field they came from, for both
+the legacy JSON media manifest and the protobuf one modern Anki writes. A card
+whose front is only a picture is imported as a picture card rather than
+skipped, and the preview says how many files the package brings before you
+commit to it.
+
+Not imported: note templates and the original scheduling history - every
+imported card starts as New under this app's own scheduler.
 
 Imports are idempotent. A note is fingerprinted on its normalised front and
-back, so re-importing an updated file adds only what is new.
+back plus the content hashes of its front and back media, so re-importing an
+updated file adds only what is new, and a picture deck whose cards share no
+text still deduplicates correctly.
+
+Deck files are capped at **100 MB**; see `ANKI_MAX_UPLOAD_MB` under
+[Configuration](#configuration). The upload goes to `POST /api/import` rather
+than a server action precisely so that stays tunable - an action's body cap
+lives in `next.config.ts`, which `next build` freezes into the standalone
+bundle, and a prebuilt image could never be re-tuned from its environment.
+
+## Exporting decks
+
+Every deck can be taken back out, from its settings page.
+
+**`.apkg`** writes a schema 11 package: the last collection format that is
+plain SQLite rather than protobuf, and the one Anki still accepts and upgrades
+on the way in. It carries the notes, tags, a three-field note type with one or
+two card templates (matching the deck's own reverse setting), the media files,
+and the full review log.
+
+Scheduling is the lossy part. Anki's schema 11 columns are SM-2, so FSRS
+stability and difficulty have nowhere to go: review cards land with their
+interval and due date, and learning cards become reviews rather than being
+stranded mid-step. The revlog goes along too, which is what Anki's own FSRS
+needs to work the memory state out again.
+
+Note identity survives a round trip. A note's Anki guid is derived from the
+note itself, not randomised, so exporting the same deck twice and importing
+both times updates rather than duplicates.
+
+**`.csv`** writes the same four columns the importer reads, so a file exported
+here comes straight back in. It is text only: attachments are listed by
+filename, and a side that is *only* a picture gets its filenames in place of
+the missing text, so the row survives instead of being silently dropped.
+
+## Images and audio
+
+Media is stored content-addressed: a file is keyed by the SHA-256 of its bytes,
+so a pronunciation clip shared by fifty notes is kept once, and re-importing a
+deck costs nothing on disk. Files live next to the database (`/data/media` by
+default, overridable with `ANKI_MEDIA_DIR`), which means an existing `/data`
+volume already backs them up.
+
+- **Studying** - pictures render on the side they belong to and audio plays
+  itself when that side appears, the way Anki does, with a speaker button to
+  replay. A wordless side is fine: the image *is* the card.
+- **Your own cards** - the add and edit forms take images and audio per field
+  (up to 20 MB each). Attachments can be removed while editing; a file nothing
+  points at any more is deleted along with its row.
+- **Serving** - `/api/media/<sha256>.<ext>`, immutable and cached forever,
+  with byte-range support so `<audio>` seeks work in Safari.
 
 ## Scheduling
 
@@ -209,13 +268,16 @@ the port can read and edit your cards.
 |---|---|---|
 | `ANKI_DB_PATH` | `/data/anki.db` | Where the SQLite collection lives |
 | `ANKI_MIGRATIONS_DIR` | `/app/drizzle` | Folder holding the generated migrations |
+| `ANKI_MEDIA_DIR` | next to the database | Where card images and audio are stored |
+| `ANKI_MAX_UPLOAD_MB` | `100` | Largest deck file the importer accepts. Read per request, so a restart applies it - no rebuild |
 | `TZ` | container default | Sets the 04:00 study-day rollover |
 | `PORT` | `3000` | Port the server listens on |
 
 ## Data and backups
 
-Everything is one SQLite file. Stop the app and copy it along with its `-wal`
-and `-shm` siblings:
+Everything is one SQLite file plus the `media/` directory beside it. Stop the
+app and copy the database with its `-wal` and `-shm` siblings and `media/` -
+the command below takes the whole volume, so it covers all of them:
 
 ```bash
 docker compose stop
@@ -229,7 +291,9 @@ The Settings page shows the live database path.
 ## PWA behaviour
 
 The service worker precaches the shell and static assets, and falls back to an
-offline page for navigations. It deliberately does **not** cache card data:
+offline page for navigations. Card media is cached the same way as build
+output - the URL contains the file's hash, so it can never go stale. It
+deliberately does **not** cache card data:
 server-side SQLite is the single source of truth, so there is no second copy to
 drift or to reconcile. Reviewing needs the server reachable.
 
@@ -281,6 +345,7 @@ src/
     ui/                    coss.com/ui components - copy-paste, yours to edit
     duo/                   mascot, pills, deck card
     study/                 session runner and confetti
+    media/                 image and audio rendering for cards
     stats/                 charts
   db/                      drizzle schema + lazily-opened connection
   lib/
@@ -288,7 +353,9 @@ src/
     queries.ts             read paths (deck counts, queue building, browsing)
     actions.ts             server actions (decks, notes, grading)
     stats.ts               every statistic, computed from the review log
+    media/                 content-addressed image / audio store
     import/                CSV and .apkg parsers, staging, ingestion
+    export/                CSV and .apkg writers, Anki schema 11
 drizzle/                   generated SQL migrations, shipped in the image
 ```
 

@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowLeft } from "lucide-react";
 import { DeckDangerZone } from "@/components/deck-danger-zone";
+import { DeckExport } from "@/components/deck-export";
 import { DeckForm } from "@/components/deck-form";
 import { Button } from "@/components/ui/button";
 import { updateDeckAction } from "@/lib/actions";
-import { getDeck } from "@/lib/queries";
+import { deckMediaCount, getDeck, getDeckCounts } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,12 @@ export default async function DeckSettingsPage({ params }: PageProps) {
           Save it
         </Button>
       </DeckForm>
+
+      <DeckExport
+        deckId={deck.id}
+        cardTotal={getDeckCounts(deck).cardTotal}
+        mediaFiles={deckMediaCount(deck.id)}
+      />
 
       <DeckDangerZone deckId={deck.id} deckName={deck.name} archived={deck.archived} />
     </div>

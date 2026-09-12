@@ -8,6 +8,17 @@ import { db, sqlite } from "@/db";
 import { cards, decks, notes, reviews } from "@/db/schema";
 import { fingerprint } from "@/lib/fingerprint";
 import {
+  attachMedia,
+  detachMedia,
+  MAX_MEDIA_BYTES,
+  noteMediaMap,
+  pruneOrphanMedia,
+  resolveMime,
+  sha256,
+  storeMedia,
+} from "@/lib/media/store";
+import { MEDIA_FIELDS, type MediaField } from "@/lib/media/types";
+import {
   formatInterval,
   gradeCard,
   newCardState,
@@ -79,16 +90,107 @@ export async function setDeckArchivedAction(deckId: number, archived: boolean) {
 
 export async function deleteDeckAction(deckId: number): Promise<void> {
   db.delete(decks).where(eq(decks.id, deckId)).run();
+  // Its notes cascaded away, and with them the last claim on their media.
+  pruneOrphanMedia();
+
   revalidatePath("/");
   redirect("/");
 }
 
+// A side may be wordless as long as it carries a picture or a clip, so the
+// "not empty" rule is checked against the attachments rather than here.
 const noteInput = z.object({
-  front: z.string().trim().min(1, "The front cannot be empty").max(2000),
-  back: z.string().trim().min(1, "The back cannot be empty").max(2000),
+  front: z.string().trim().max(2000).default(""),
+  back: z.string().trim().max(2000).default(""),
   extra: z.string().trim().max(4000).default(""),
   tags: z.string().trim().max(400).default(""),
 });
+
+
+/** One upload, already read off the wire and ready for the media store. */
+interface PreparedUpload {
+  field: MediaField;
+  filename: string;
+  mime: string;
+  bytes: Uint8Array;
+  hash: string;
+}
+
+/**
+ * Reads the note form's file inputs. This happens before the database
+ * transaction opens, because `sqlite.transaction` takes a synchronous callback
+ * and pulling bytes out of a `File` is asynchronous.
+ */
+async function readUploads(
+  formData: FormData,
+): Promise<{ uploads: PreparedUpload[] } | { error: string }> {
+  const uploads: PreparedUpload[] = [];
+
+  for (const field of MEDIA_FIELDS) {
+    const files = formData
+      .getAll(`media:${field}`)
+      .filter((value): value is File => value instanceof File && value.size > 0);
+
+    for (const file of files) {
+      if (file.size > MAX_MEDIA_BYTES) {
+        const limit = Math.round(MAX_MEDIA_BYTES / 1024 / 1024);
+        return { error: `${file.name} is larger than ${limit} MB.` };
+      }
+
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const mime = resolveMime(file.name, bytes, file.type);
+      if (!mime) {
+        return { error: `${file.name} is not an image or an audio clip.` };
+      }
+
+      uploads.push({ field, filename: file.name, mime, bytes, hash: sha256(bytes) });
+    }
+  }
+
+  return { uploads };
+}
+
+/** Writes prepared uploads into the store and hangs them off the note. */
+function commitUploads(noteId: number, uploads: PreparedUpload[]) {
+  for (const field of MEDIA_FIELDS) {
+    const ids: number[] = [];
+    for (const upload of uploads.filter((item) => item.field === field)) {
+      const row = storeMedia({
+        filename: upload.filename,
+        bytes: upload.bytes,
+        declaredMime: upload.mime,
+      });
+      if (row) ids.push(row.id);
+    }
+    attachMedia(noteId, field, ids);
+  }
+}
+
+/**
+ * `note_media` row ids the form asked to detach. These identify the file *on
+ * this note*, not the shared `media` row - detaching by the latter would hit
+ * whatever attachment happened to share that number.
+ */
+function detachedAttachmentIds(formData: FormData): number[] {
+  const raw = formData.get("removeMedia");
+  if (typeof raw !== "string" || !raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is number => Number.isInteger(id))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Front and back media identify a note, the same way their text does. */
+function identifyingHashes(uploads: PreparedUpload[], kept: string[] = []): string[] {
+  return [
+    ...kept,
+    ...uploads.filter((item) => item.field !== "extra").map((item) => item.hash),
+  ];
+}
 
 function parseTags(raw: string): string[] {
   return Array.from(
@@ -117,8 +219,22 @@ export async function createNoteAction(
   const deck = db.select().from(decks).where(eq(decks.id, deckId)).get();
   if (!deck) return { ok: false, error: "Deck not found" };
 
+  const read = await readUploads(formData);
+  if ("error" in read) return { ok: false, error: read.error };
+  const { uploads } = read;
+
   const { front, back, extra } = parsed.data;
-  const fp = fingerprint(front, back);
+  const has = (field: MediaField, text: string) =>
+    Boolean(text) || uploads.some((item) => item.field === field);
+
+  if (!has("front", front)) {
+    return { ok: false, error: "The front needs text or an attachment" };
+  }
+  if (!has("back", back)) {
+    return { ok: false, error: "The back needs text or an attachment" };
+  }
+
+  const fp = fingerprint(front, back, identifyingHashes(uploads));
 
   const existing = db
     .select({ id: notes.id })
@@ -159,6 +275,8 @@ export async function createNoteAction(
         })),
       )
       .run();
+
+    commitUploads(note.id, uploads);
   })();
 
   revalidatePath(`/decks/${deckId}`);
@@ -178,17 +296,49 @@ export async function updateNoteAction(
   const note = db.select().from(notes).where(eq(notes.id, noteId)).get();
   if (!note) return { ok: false, error: "Card not found" };
 
-  db.update(notes)
-    .set({
-      front: parsed.data.front,
-      back: parsed.data.back,
-      extra: parsed.data.extra,
-      tags: JSON.stringify(parseTags(parsed.data.tags)),
-      fingerprint: fingerprint(parsed.data.front, parsed.data.back),
-      updatedAt: Date.now(),
-    })
-    .where(eq(notes.id, noteId))
-    .run();
+  const read = await readUploads(formData);
+  if ("error" in read) return { ok: false, error: read.error };
+  const { uploads } = read;
+
+  const detaching = detachedAttachmentIds(formData);
+  const current = noteMediaMap(noteId);
+  const { front, back, extra } = parsed.data;
+
+  const keeps = (field: MediaField) =>
+    current[field].filter((file) => !detaching.includes(file.attachmentId));
+  const has = (field: MediaField, text: string) =>
+    Boolean(text) ||
+    keeps(field).length > 0 ||
+    uploads.some((item) => item.field === field);
+
+  if (!has("front", front)) {
+    return { ok: false, error: "The front needs text or an attachment" };
+  }
+  if (!has("back", back)) {
+    return { ok: false, error: "The back needs text or an attachment" };
+  }
+
+  const kept = [...keeps("front"), ...keeps("back")].map((file) => file.hash);
+
+  sqlite.transaction(() => {
+    detachMedia(noteId, detaching);
+    commitUploads(noteId, uploads);
+
+    db.update(notes)
+      .set({
+        front,
+        back,
+        extra,
+        tags: JSON.stringify(parseTags(parsed.data.tags)),
+        fingerprint: fingerprint(front, back, identifyingHashes(uploads, kept)),
+        updatedAt: Date.now(),
+      })
+      .where(eq(notes.id, noteId))
+      .run();
+  })();
+
+  // A file the note just let go of may have been its last reference.
+  if (detaching.length > 0) pruneOrphanMedia();
 
   revalidatePath(`/decks/${note.deckId}`);
   return { ok: true };
@@ -199,6 +349,9 @@ export async function deleteNoteAction(noteId: number): Promise<ActionResult> {
   if (!note) return { ok: false, error: "Card not found" };
 
   db.delete(notes).where(eq(notes.id, noteId)).run();
+  // The join rows cascaded away; the files they pointed at may now be unused.
+  pruneOrphanMedia();
+
   revalidatePath(`/decks/${note.deckId}`);
   revalidatePath("/");
   return { ok: true };

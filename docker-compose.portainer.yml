@@ -22,6 +22,8 @@ services:
     environment:
       TZ: ${TZ:-Europe/Prague}
       ANKI_DB_PATH: /data/anki.db
+      # Largest deck file the importer accepts, in MB.
+      ANKI_MAX_UPLOAD_MB: ${ANKI_MAX_UPLOAD_MB:-100}
     volumes:
       # Your whole collection is one SQLite file inside this volume.
       - lexo-data:/data

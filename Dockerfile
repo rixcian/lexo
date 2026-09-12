@@ -38,7 +38,8 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
     ANKI_DB_PATH=/data/anki.db \
-    ANKI_MIGRATIONS_DIR=/app/drizzle
+    ANKI_MIGRATIONS_DIR=/app/drizzle \
+    ANKI_MAX_UPLOAD_MB=100
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends wget \
