@@ -140,8 +140,10 @@ on the Settings page.
 
 **Pull a prebuilt image (recommended).**
 [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)
-builds `linux/amd64` and `linux/arm64` and pushes to GHCR on every release -
-free for public repos, and the server never builds anything. In Portainer:
+builds `linux/amd64` and pushes to GHCR on every release - free for public
+repos, and the server never builds anything. ARM hosts need `linux/arm64`
+adding back to that workflow; it is left out because an emulated arm64 layer
+costs about five minutes a build. In Portainer:
 **Stacks → Add stack → Web editor**, paste
 [`docker-compose.portainer.yml`](docker-compose.portainer.yml), deploy.
 
