@@ -32,6 +32,43 @@ volume at `/data/anki.db`; migrations run automatically on first boot.
 Set `TZ` in `.env` (see `.env.example`) to your own timezone - the study day
 rolls over at 04:00 local time, and streaks depend on it.
 
+### Portainer (a server you already run)
+
+Two free routes. Both keep the collection in a named `lexo-data` volume.
+
+**A. Pull a prebuilt image (recommended).** [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)
+builds on every push to `main` and pushes `ghcr.io/rixcian/lexo:latest` to the
+GitHub Container Registry - free for public repos, and the server never builds
+anything. After the first run, open the package on GitHub and set its
+visibility to **Public**, otherwise Portainer needs registry credentials.
+
+In Portainer: **Stacks -> Add stack -> Web editor**, paste
+[`docker-compose.portainer.yml`](docker-compose.portainer.yml), deploy. To
+update later, hit **Pull and redeploy** (or wire the stack's webhook into the
+workflow).
+
+**B. Let the server build from git.** In Portainer: **Stacks -> Add stack ->
+Repository**, point it at `https://github.com/rixcian/lexo`, compose path
+`docker-compose.yml`. Portainer clones the repo and builds on the box - no
+registry at all, but it needs roughly 2 GB of free RAM and a few minutes per
+deploy.
+
+> **HTTPS is what makes it installable.** Service workers and "Add to home
+> screen" only work in a secure context, so over plain `http://<server-ip>:3000`
+> the app runs but will not install as a PWA. On a tailnet the cheapest fix is
+> Tailscale's own certificate:
+>
+> ```bash
+> tailscale serve --bg 3000
+> ```
+>
+> That publishes `https://<host>.<tailnet>.ts.net` with a real Let's Encrypt
+> cert, and the app installs from there on a phone. Off the tailnet, terminate
+> TLS with Caddy, Traefik or a Cloudflare Tunnel instead.
+>
+> There is also no login, so keep it on the tailnet or the LAN - anyone who can
+> reach the port can read and edit your cards.
+
 ### Local development
 
 ```bash
