@@ -84,6 +84,7 @@ rather than a named volume, and a host port that is free:
     environment:
       - TZ=${TZ:-Europe/Prague}
       - ANKI_DB_PATH=/data/anki.db
+      - ANKI_MAX_UPLOAD_MB=100
     volumes:
       - ${BASE_PATH}/lexo/data:/data
     restart: unless-stopped
@@ -177,6 +178,25 @@ Imports are idempotent: a note is fingerprinted on its normalized front+back
 plus the content hashes of its front/back media, so re-importing an updated
 file adds only what is new, and a picture deck whose cards share no text still
 deduplicates correctly.
+
+### Upload size
+
+Deck files are capped at **100 MB** by default. Set `ANKI_MAX_UPLOAD_MB` to
+change it; the value is read per request, so a container restart is enough and
+no rebuild is involved.
+
+```yaml
+environment:
+  ANKI_MAX_UPLOAD_MB: 250
+```
+
+The upload goes to `POST /api/import` rather than a server action precisely so
+this stays tunable: an action's body cap lives in `next.config.ts`, which
+`next build` freezes into the standalone bundle, and a prebuilt image could
+never be re-tuned from its environment. A file over the limit is refused on its
+`Content-Length` before the body is read, and again on the real size once it
+has been, so a lying header buys nothing. The whole file is held in memory
+while it is parsed, so give the container headroom over whatever you set here.
 
 ## Exporting decks
 

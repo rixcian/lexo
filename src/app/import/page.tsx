@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ImportWizard } from "@/components/import/import-wizard";
+import { maxUploadMb } from "@/lib/import/limits";
 import { listDecks } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Import" };
@@ -22,7 +23,7 @@ export default function ImportPage() {
         </p>
       </header>
 
-      <ImportWizard decks={decks} />
+      <ImportWizard decks={decks} maxUploadMb={maxUploadMb()} />
 
       <section className="rounded-[20px] bg-bg-soft p-6">
         <h2 className="type-h4 text-card-foreground">CSV shape</h2>

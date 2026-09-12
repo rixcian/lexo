@@ -12,6 +12,9 @@ services:
       # streaks will break at the wrong hour.
       TZ: ${TZ:-Europe/Prague}
       ANKI_DB_PATH: /data/anki.db
+      # Largest deck file the importer will accept, in MB. Takes effect on
+      # restart - no rebuild needed.
+      ANKI_MAX_UPLOAD_MB: ${ANKI_MAX_UPLOAD_MB:-100}
     volumes:
       # Your entire collection lives in this one SQLite file.
       - lexo-data:/data

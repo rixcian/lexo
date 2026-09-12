@@ -9,7 +9,10 @@ const nextConfig: NextConfig = {
 
   experimental: {
     serverActions: {
-      // .apkg decks routinely run to tens of megabytes.
+      // Covers the images and audio attached to a single card. Deck files do
+      // not come through an action: `next build` freezes this value into the
+      // standalone bundle, so it could never be re-tuned from the environment.
+      // That is why /api/import is a route handler reading ANKI_MAX_UPLOAD_MB.
       bodySizeLimit: "64mb",
     },
   },

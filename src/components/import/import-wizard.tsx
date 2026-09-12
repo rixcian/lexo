@@ -10,12 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toastManager } from "@/components/ui/toast";
-import {
-  confirmImportAction,
-  previewImportAction,
-  uploadImportAction,
-} from "@/lib/import/actions";
-import type { ImportPreview } from "@/lib/import/preview-types";
+import { confirmImportAction, previewImportAction } from "@/lib/import/actions";
+import type {
+  ImportPreview,
+  ImportPreviewResult,
+} from "@/lib/import/preview-types";
 import type { ImportSummary, ParsedNote } from "@/lib/import/types";
 import { DECK_COLORS, DECK_COLOR_CLASS, DECK_COLOR_LABEL } from "@/lib/colors";
 import { cn } from "@/lib/utils";
@@ -35,7 +34,14 @@ const DELIMITER_OPTIONS = [
 const selectClass =
   "h-12 w-full rounded-xl border-2 border-input bg-card px-3 text-sm text-foreground focus-visible:border-brand focus-visible:outline-none";
 
-export function ImportWizard({ decks }: { decks: DeckOption[] }) {
+export function ImportWizard({
+  decks,
+  maxUploadMb,
+}: {
+  decks: DeckOption[];
+  /** Server-side limit, shown here so the cap is visible before picking. */
+  maxUploadMb: number;
+}) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -55,12 +61,33 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
   const [reverseCards, setReverseCards] = useState(false);
 
   function upload(file: File) {
-    const formData = new FormData();
-    formData.append("file", file);
     setError(null);
 
+    // Rejected here as well as on the server, so a 200 MB mistake never leaves
+    // the browser only to come back as an error.
+    if (file.size > maxUploadMb * 1024 * 1024) {
+      setError(`That file is larger than ${maxUploadMb} MB.`);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
     startUpload(async () => {
-      const result = await uploadImportAction(formData);
+      // A route handler rather than a server action: the deck file can be far
+      // larger than an action's body cap, which is fixed at build time.
+      let result: ImportPreviewResult;
+      try {
+        const response = await fetch("/api/import", {
+          method: "POST",
+          body: formData,
+        });
+        result = (await response.json()) as ImportPreviewResult;
+      } catch {
+        setError("The upload did not reach the server. Try again.");
+        return;
+      }
+
       if (!result.ok) {
         setError(result.error);
         return;
@@ -167,7 +194,8 @@ export function ImportWizard({ decks }: { decks: DeckOption[] }) {
             {uploading ? "Reading the file..." : "Drop a deck file here"}
           </span>
           <span className="type-body text-muted-foreground">
-            .apkg from Anki, or a CSV / TSV with a front and a back column.
+            .apkg from Anki, or a CSV / TSV with a front and a back column. Up
+            to {maxUploadMb} MB.
           </span>
           <Button
             variant="duo"
