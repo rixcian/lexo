@@ -9,6 +9,49 @@ import {
 } from "drizzle-orm/sqlite-core";
 
 /**
+ * Accounts are deliberately thin: a username is the whole credential. The app
+ * is meant to run on a private network for a household, so there is no
+ * password to forget - signing in is picking your name off a list.
+ *
+ * Row 1 is seeded by the migration with an empty username. It owns every deck,
+ * card and review that predates accounts, and the first registration claims it
+ * rather than inserting a new row - that is how an existing collection keeps
+ * its scheduling and its streak.
+ */
+export const users = sqliteTable(
+  "users",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /** Display spelling. Uniqueness is enforced case-insensitively in code. */
+    username: text("username").notNull(),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [uniqueIndex("users_username_idx").on(t.username)],
+);
+
+/**
+ * Server-side sessions. The cookie carries a random token; only its sha256
+ * lands here, so a copy of the database is not a set of live logins.
+ */
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    /** sha256 of the cookie token, hex. */
+    id: text("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    expiresAt: integer("expires_at").notNull(),
+  },
+  (t) => [index("sessions_user_idx").on(t.userId)],
+);
+
+/**
  * Decks are language-agnostic: `frontLang`/`backLang` are free-form BCP-47-ish
  * tags so the same app holds Spanish, Japanese or pure-trivia decks.
  */
@@ -119,6 +162,16 @@ export const cards = sqliteTable(
   "cards",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    /**
+     * Whose progress this row is. Decks and notes are shared by the whole
+     * household; the schedule is not, so every user gets their own card row
+     * per note and template.
+     *
+     * The column carries a DEFAULT so the migration could backfill the rows
+     * that predate accounts onto user 1 without rebuilding the table - never
+     * lean on it when inserting, always pass the user explicitly.
+     */
+    userId: integer("user_id").notNull().default(1),
     noteId: integer("note_id")
       .notNull()
       .references(() => notes.id, { onDelete: "cascade" }),
@@ -144,10 +197,12 @@ export const cards = sqliteTable(
       .default(false),
   },
   (t) => [
-    uniqueIndex("cards_note_template_idx").on(t.noteId, t.template),
-    index("cards_deck_due_idx").on(t.deckId, t.due),
-    index("cards_due_idx").on(t.due),
-    index("cards_state_idx").on(t.state),
+    uniqueIndex("cards_user_note_template_idx").on(t.userId, t.noteId, t.template),
+    index("cards_user_deck_due_idx").on(t.userId, t.deckId, t.due),
+    index("cards_user_state_idx").on(t.userId, t.state),
+    // Deleting a note cascades by note_id, which is no longer the leading
+    // column of any other index.
+    index("cards_note_idx").on(t.noteId),
   ],
 );
 
@@ -156,6 +211,8 @@ export const reviews = sqliteTable(
   "reviews",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    /** See `cards.userId` - same reasoning, same backfill default. */
+    userId: integer("user_id").notNull().default(1),
     cardId: integer("card_id")
       .notNull()
       .references(() => cards.id, { onDelete: "cascade" }),
@@ -176,8 +233,8 @@ export const reviews = sqliteTable(
     durationMs: integer("duration_ms").notNull().default(0),
   },
   (t) => [
-    index("reviews_reviewed_at_idx").on(t.reviewedAt),
-    index("reviews_deck_idx").on(t.deckId),
+    index("reviews_user_reviewed_at_idx").on(t.userId, t.reviewedAt),
+    index("reviews_user_deck_idx").on(t.userId, t.deckId, t.reviewedAt),
     index("reviews_card_idx").on(t.cardId),
   ],
 );
@@ -188,6 +245,7 @@ export const settings = sqliteTable("settings", {
   value: text("value").notNull(),
 });
 
+export type User = typeof users.$inferSelect;
 export type Deck = typeof decks.$inferSelect;
 export type Note = typeof notes.$inferSelect;
 export type Card = typeof cards.$inferSelect;

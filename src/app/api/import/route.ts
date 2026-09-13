@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { currentUser } from "@/lib/auth/session";
 import { parseImportUpload } from "@/lib/import/upload";
 import { maxUploadBytes, tooLargeMessage } from "@/lib/import/limits";
 
@@ -13,6 +14,13 @@ export const dynamic = "force-dynamic";
  * handlers have no such cap, which leaves the limit ours to enforce.
  */
 export async function POST(request: Request) {
+  if (!(await currentUser())) {
+    return NextResponse.json(
+      { ok: false, error: "Sign in first." },
+      { status: 401 },
+    );
+  }
+
   const limit = maxUploadBytes();
 
   // Refuse on the declared length before reading a single byte of the body.

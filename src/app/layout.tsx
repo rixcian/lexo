@@ -4,6 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import { PwaRegister } from "@/components/pwa-register";
 import { themeInitScript } from "@/components/theme-toggle";
 import { ToastProvider } from "@/components/ui/toast";
+import { currentUser } from "@/lib/auth/session";
 import { streak, todaySummary } from "@/lib/stats";
 import "./globals.css";
 
@@ -47,11 +48,14 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const today = todaySummary();
-  const days = streak();
+  // Null on the sign-in and registration screens, which render in the same
+  // shell with its chrome stripped back.
+  const user = await currentUser();
+  const today = user ? todaySummary(user.id) : null;
+  const days = user ? streak(user.id) : null;
 
   return (
     <html lang="en" className={lexend.variable} suppressHydrationWarning>
@@ -62,9 +66,10 @@ export default function RootLayout({
       <body className="antialiased">
         <ToastProvider position="bottom-center">
           <AppShell
-            streakDays={days.current}
-            streakLit={days.litToday}
-            xpToday={today.xp}
+            streakDays={days?.current ?? 0}
+            streakLit={days?.litToday ?? false}
+            user={user && { id: user.id, username: user.username }}
+            xpToday={today?.xp ?? 0}
           >
             {children}
           </AppShell>

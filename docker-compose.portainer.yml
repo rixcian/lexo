@@ -15,9 +15,9 @@ services:
     container_name: lexo
     restart: unless-stopped
     ports:
-      # Reachable from the LAN and from the tailnet. The app has no login, so
-      # narrow this to "127.0.0.1:3000:3000" and proxy it if the host ever gets
-      # an interface you do not trust.
+      # Reachable from the LAN and from the tailnet. Signing in only takes a
+      # name, so narrow this to "127.0.0.1:3000:3000" and proxy it if the host
+      # ever gets an interface you do not trust.
       - "${LEXO_BIND:-0.0.0.0}:3000:3000"
     environment:
       TZ: ${TZ:-Europe/Prague}

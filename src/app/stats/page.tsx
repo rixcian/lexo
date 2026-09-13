@@ -12,6 +12,7 @@ import { Mascot } from "@/components/duo/mascot";
 import { Pill } from "@/components/duo/chips";
 import { Button } from "@/components/ui/button";
 import { DECK_COLOR_CLASS, deckColor } from "@/lib/colors";
+import { requireUser } from "@/lib/auth/session";
 import { dueForecast } from "@/lib/queries";
 import {
   formatDuration,
@@ -29,16 +30,18 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = { title: "Stats" };
 export const dynamic = "force-dynamic";
 
-export default function StatsPage() {
-  const totals = lifetimeTotals();
-  const today = todaySummary();
-  const days = streak();
-  const dist = stateDistribution();
-  const thirtyDay = retention(30);
-  const breakdown = ratingBreakdown(30);
-  const calendar = heatmap(365);
-  const forecast = dueForecast(30);
-  const decks = perDeckTotals();
+export default async function StatsPage() {
+  const user = await requireUser();
+
+  const totals = lifetimeTotals(user.id);
+  const today = todaySummary(user.id);
+  const days = streak(user.id);
+  const dist = stateDistribution(user.id);
+  const thirtyDay = retention(user.id, 30);
+  const breakdown = ratingBreakdown(user.id, 30);
+  const calendar = heatmap(user.id, 365);
+  const forecast = dueForecast(user.id, 30);
+  const decks = perDeckTotals(user.id);
 
   const last30 = calendar.slice(-30);
 

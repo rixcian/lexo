@@ -6,6 +6,8 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, sqlite } from "@/db";
 import { cards, decks, notes, reviews } from "@/db/schema";
+import { requireUser } from "@/lib/auth/session";
+import { userIds } from "@/lib/auth/users";
 import { fingerprint } from "@/lib/fingerprint";
 import {
   attachMedia,
@@ -47,6 +49,19 @@ const deckInput = z.object({
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
+/**
+ * A card id only means something together with its owner: the same note has one
+ * card row per person, so an id from someone else's queue must read as missing
+ * rather than as something to grade.
+ */
+function ownCard(userId: number, cardId: number) {
+  return db
+    .select()
+    .from(cards)
+    .where(and(eq(cards.id, cardId), eq(cards.userId, userId)))
+    .get();
+}
+
 function formToObject(formData: FormData) {
   const out: Record<string, unknown> = {};
   for (const [key, value] of formData.entries()) {
@@ -58,6 +73,8 @@ function formToObject(formData: FormData) {
 }
 
 export async function createDeckAction(formData: FormData): Promise<void> {
+  await requireUser();
+
   const parsed = deckInput.safeParse(formToObject(formData));
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message ?? "Invalid deck");
@@ -72,6 +89,8 @@ export async function updateDeckAction(
   deckId: number,
   formData: FormData,
 ): Promise<void> {
+  await requireUser();
+
   const parsed = deckInput.safeParse(formToObject(formData));
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message ?? "Invalid deck");
@@ -83,12 +102,16 @@ export async function updateDeckAction(
 }
 
 export async function setDeckArchivedAction(deckId: number, archived: boolean) {
+  await requireUser();
+
   db.update(decks).set({ archived }).where(eq(decks.id, deckId)).run();
   revalidatePath("/");
   revalidatePath(`/decks/${deckId}`);
 }
 
 export async function deleteDeckAction(deckId: number): Promise<void> {
+  await requireUser();
+
   db.delete(decks).where(eq(decks.id, deckId)).run();
   // Its notes cascaded away, and with them the last claim on their media.
   pruneOrphanMedia();
@@ -211,6 +234,8 @@ export async function createNoteAction(
   deckId: number,
   formData: FormData,
 ): Promise<ActionResult> {
+  await requireUser();
+
   const parsed = noteInput.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid note" };
@@ -264,15 +289,20 @@ export async function createNoteAction(
       .returning({ id: notes.id })
       .get();
 
+    // The deck is shared, so the note is too - everyone gets their own copy of
+    // its schedule, starting from new.
     const templates = deck.reverseCards ? ["forward", "reverse"] : ["forward"];
     db.insert(cards)
       .values(
-        templates.map((template) => ({
-          noteId: note.id,
-          deckId,
-          template,
-          ...fresh,
-        })),
+        userIds().flatMap((userId) =>
+          templates.map((template) => ({
+            userId,
+            noteId: note.id,
+            deckId,
+            template,
+            ...fresh,
+          })),
+        ),
       )
       .run();
 
@@ -288,6 +318,8 @@ export async function updateNoteAction(
   noteId: number,
   formData: FormData,
 ): Promise<ActionResult> {
+  await requireUser();
+
   const parsed = noteInput.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid note" };
@@ -345,6 +377,8 @@ export async function updateNoteAction(
 }
 
 export async function deleteNoteAction(noteId: number): Promise<ActionResult> {
+  await requireUser();
+
   const note = db.select().from(notes).where(eq(notes.id, noteId)).get();
   if (!note) return { ok: false, error: "Card not found" };
 
@@ -361,7 +395,9 @@ export async function setCardSuspendedAction(
   cardId: number,
   suspended: boolean,
 ): Promise<ActionResult> {
-  const card = db.select().from(cards).where(eq(cards.id, cardId)).get();
+  const user = await requireUser();
+
+  const card = ownCard(user.id, cardId);
   if (!card) return { ok: false, error: "Card not found" };
 
   db.update(cards).set({ suspended }).where(eq(cards.id, cardId)).run();
@@ -372,7 +408,9 @@ export async function setCardSuspendedAction(
 
 /** Wipes a card's scheduling history and sends it back to the New queue. */
 export async function resetCardAction(cardId: number): Promise<ActionResult> {
-  const card = db.select().from(cards).where(eq(cards.id, cardId)).get();
+  const user = await requireUser();
+
+  const card = ownCard(user.id, cardId);
   if (!card) return { ok: false, error: "Card not found" };
 
   sqlite.transaction(() => {
@@ -404,11 +442,13 @@ export async function gradeCardAction(
   rating: number,
   durationMs = 0,
 ): Promise<GradeResult> {
+  const user = await requireUser();
+
   if (![1, 2, 3, 4].includes(rating)) {
     return { ok: false, error: "Unknown rating" };
   }
 
-  const card = db.select().from(cards).where(eq(cards.id, cardId)).get();
+  const card = ownCard(user.id, cardId);
   if (!card) return { ok: false, error: "Card not found" };
 
   const now = new Date();
@@ -417,7 +457,11 @@ export async function gradeCardAction(
   sqlite.transaction(() => {
     db.update(cards).set(cardUpdate).where(eq(cards.id, cardId)).run();
     db.insert(reviews)
-      .values({ ...reviewRow, durationMs: Math.max(0, Math.round(durationMs)) })
+      .values({
+        ...reviewRow,
+        userId: user.id,
+        durationMs: Math.max(0, Math.round(durationMs)),
+      })
       .run();
   })();
 

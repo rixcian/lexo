@@ -34,7 +34,7 @@ function todayRange(now = new Date()) {
  * How many new / review cards this deck has already burned through today.
  * Counted from the review log so it survives restarts and edits.
  */
-function studiedToday(deckId: number, now = new Date()) {
+function studiedToday(userId: number, deckId: number, now = new Date()) {
   const { dayStart, dayEnd } = todayRange(now);
 
   const rows = db
@@ -45,6 +45,7 @@ function studiedToday(deckId: number, now = new Date()) {
     .from(reviews)
     .where(
       and(
+        eq(reviews.userId, userId),
         eq(reviews.deckId, deckId),
         gte(reviews.reviewedAt, dayStart),
         lte(reviews.reviewedAt, dayEnd),
@@ -62,15 +63,20 @@ function studiedToday(deckId: number, now = new Date()) {
   return { introducedNew, reviewed };
 }
 
-export function getDeckCounts(deck: Deck, now = new Date()): DeckCounts {
+export function getDeckCounts(
+  userId: number,
+  deck: Deck,
+  now = new Date(),
+): DeckCounts {
   const nowMs = now.getTime();
-  const { introducedNew, reviewed } = studiedToday(deck.id, now);
+  const { introducedNew, reviewed } = studiedToday(userId, deck.id, now);
 
   const byState = db
     .select({ state: cards.state, n: count() })
     .from(cards)
     .where(
       and(
+        eq(cards.userId, userId),
         eq(cards.deckId, deck.id),
         eq(cards.suspended, false),
         lte(cards.due, nowMs),
@@ -90,7 +96,7 @@ export function getDeckCounts(deck: Deck, now = new Date()): DeckCounts {
     db
       .select({ n: count() })
       .from(cards)
-      .where(eq(cards.deckId, deck.id))
+      .where(and(eq(cards.userId, userId), eq(cards.deckId, deck.id)))
       .get()?.n ?? 0;
 
   const newDue = Math.max(0, Math.min(pool.new, deck.newPerDay - introducedNew));
@@ -110,7 +116,10 @@ export function getDeckCounts(deck: Deck, now = new Date()): DeckCounts {
   };
 }
 
-export function listDecks(includeArchived = false): DeckWithCounts[] {
+export function listDecks(
+  userId: number,
+  includeArchived = false,
+): DeckWithCounts[] {
   const now = new Date();
   const rows = db
     .select()
@@ -119,7 +128,7 @@ export function listDecks(includeArchived = false): DeckWithCounts[] {
     .orderBy(asc(decks.name))
     .all();
 
-  return rows.map((deck) => ({ ...deck, counts: getDeckCounts(deck, now) }));
+  return rows.map((deck) => ({ ...deck, counts: getDeckCounts(userId, deck, now) }));
 }
 
 export function getDeck(id: number): Deck | undefined {
@@ -207,9 +216,13 @@ export function safeTags(raw: string): string[] {
  * sensitive), then reviews, with the day's new cards spread evenly through the
  * rest so a session never ends with a wall of unseen words.
  */
-export function buildQueue(deck: Deck, now = new Date()): SessionCard[] {
+export function buildQueue(
+  userId: number,
+  deck: Deck,
+  now = new Date(),
+): SessionCard[] {
   const nowMs = now.getTime();
-  const counts = getDeckCounts(deck, now);
+  const counts = getDeckCounts(userId, deck, now);
 
   const pick = (where: ReturnType<typeof and>, limit: number, order = asc(cards.due)) =>
     limit <= 0
@@ -224,6 +237,7 @@ export function buildQueue(deck: Deck, now = new Date()): SessionCard[] {
           .all();
 
   const base = and(
+    eq(cards.userId, userId),
     eq(cards.deckId, deck.id),
     eq(cards.suspended, false),
     lte(cards.due, nowMs),
@@ -235,7 +249,12 @@ export function buildQueue(deck: Deck, now = new Date()): SessionCard[] {
   );
   const review = pick(and(base, eq(cards.state, State.Review)), counts.reviewDue);
   const fresh = pick(
-    and(eq(cards.deckId, deck.id), eq(cards.suspended, false), eq(cards.state, State.New)),
+    and(
+      eq(cards.userId, userId),
+      eq(cards.deckId, deck.id),
+      eq(cards.suspended, false),
+      eq(cards.state, State.New),
+    ),
     counts.newDue,
     asc(cards.id),
   );
@@ -281,12 +300,16 @@ export interface BrowseRow {
   media: NoteMediaMap;
 }
 
-export function browseCards(deckId: number, filters: BrowseFilters = {}) {
+export function browseCards(
+  userId: number,
+  deckId: number,
+  filters: BrowseFilters = {},
+) {
   const perPage = filters.perPage ?? 50;
   const page = Math.max(1, filters.page ?? 1);
   const now = Date.now();
 
-  const clauses = [eq(cards.deckId, deckId)];
+  const clauses = [eq(cards.userId, userId), eq(cards.deckId, deckId)];
   if (filters.search) {
     const needle = `%${filters.search.toLowerCase()}%`;
     clauses.push(
@@ -353,13 +376,14 @@ export function getNoteMedia(noteId: number): NoteMediaMap {
 }
 
 /** Cards due per day for the next `days` days, for the forecast chart. */
-export function dueForecast(days = 30, deckId?: number) {
+export function dueForecast(userId: number, days = 30, deckId?: number) {
   const start = startOfStudyDay().getTime();
   const rows = db
     .select({ due: cards.due, state: cards.state })
     .from(cards)
     .where(
       and(
+        eq(cards.userId, userId),
         eq(cards.suspended, false),
         ne(cards.state, State.New),
         deckId ? eq(cards.deckId, deckId) : undefined,
@@ -376,13 +400,14 @@ export function dueForecast(days = 30, deckId?: number) {
   return buckets;
 }
 
-export function recentReviews(limit = 10) {
+export function recentReviews(userId: number, limit = 10) {
   return db
     .select({ review: reviews, note: notes, deck: decks })
     .from(reviews)
     .innerJoin(cards, eq(reviews.cardId, cards.id))
     .innerJoin(notes, eq(cards.noteId, notes.id))
     .innerJoin(decks, eq(reviews.deckId, decks.id))
+    .where(eq(reviews.userId, userId))
     .orderBy(desc(reviews.reviewedAt))
     .limit(limit)
     .all();
@@ -397,13 +422,14 @@ export function hasAnyDeck(): boolean {
   return (db.select({ n: count() }).from(decks).get()?.n ?? 0) > 0;
 }
 
-export function cardsDueLater(deckId: number, now = new Date()) {
+export function cardsDueLater(userId: number, deckId: number, now = new Date()) {
   return (
     db
       .select({ n: count() })
       .from(cards)
       .where(
         and(
+          eq(cards.userId, userId),
           eq(cards.deckId, deckId),
           eq(cards.suspended, false),
           gt(cards.due, now.getTime()),

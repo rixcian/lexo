@@ -1,9 +1,13 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Archive, Database, Download, Plus } from "lucide-react";
+import { Archive, Database, Download, LogOut, Plus, UserPlus } from "lucide-react";
+import { UserAvatar } from "@/components/account/user-avatar";
 import { Pill } from "@/components/duo/chips";
 import { Button } from "@/components/ui/button";
 import { DB_PATH } from "@/db";
+import { signOutAction } from "@/lib/auth/actions";
+import { requireUser } from "@/lib/auth/session";
+import { listUsers } from "@/lib/auth/users";
 import { DAY_ROLLOVER_HOUR } from "@/lib/day";
 import { listDecks } from "@/lib/queries";
 import { DEFAULT_SCHEDULER_CONFIG } from "@/lib/scheduler";
@@ -12,9 +16,11 @@ import { formatDuration, lifetimeTotals } from "@/lib/stats";
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
-export default function SettingsPage() {
-  const totals = lifetimeTotals();
-  const archived = listDecks(true).filter((deck) => deck.archived);
+export default async function SettingsPage() {
+  const user = await requireUser();
+  const totals = lifetimeTotals(user.id);
+  const archived = listDecks(user.id, true).filter((deck) => deck.archived);
+  const others = listUsers().filter((account) => account.id !== user.id);
 
   return (
     <div className="mx-auto flex max-w-[720px] flex-col gap-8">
@@ -24,6 +30,73 @@ export default function SettingsPage() {
           Per-deck limits live on each deck. These are the global bits.
         </p>
       </header>
+
+      <section className="flex flex-col gap-4 rounded-[20px] bg-card p-6 shadow-card">
+        <h2 className="type-h3 text-card-foreground">Account</h2>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-secondary px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <UserAvatar userId={user.id} username={user.username} />
+            <div className="min-w-0">
+              <p className="type-body-bold truncate text-card-foreground">
+                {user.username}
+              </p>
+              <p className="type-caption text-muted-foreground">
+                Signed in on this device
+              </p>
+            </div>
+          </div>
+
+          {/* A plain form, so signing out works before hydration too. */}
+          <form action={signOutAction}>
+            <Button size="duo-sm" type="submit" variant="duo-secondary">
+              <LogOut />
+              Sign out
+            </Button>
+          </form>
+        </div>
+
+        <p className="type-body-sm text-muted-foreground">
+          Decks, cards and media are shared by everyone here. Scheduling,
+          reviews, streak and stats are kept per account, so you can both work
+          through the same deck at your own pace.
+        </p>
+
+        {others.length > 0 ? (
+          <div>
+            <p className="type-eyebrow text-muted-foreground">
+              Also studying here
+            </p>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {others.map((account) => (
+                <li
+                  className="flex items-center gap-2 rounded-full bg-secondary py-1 pr-4 pl-1"
+                  key={account.id}
+                >
+                  <UserAvatar
+                    className="size-7 text-[11px]"
+                    userId={account.id}
+                    username={account.username}
+                  />
+                  <span className="type-label">{account.username}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div>
+          <Button
+            render={<Link href="/register" />}
+            size="duo-sm"
+            variant="duo-ghost"
+            className="-ml-4"
+          >
+            <UserPlus />
+            Add someone
+          </Button>
+        </div>
+      </section>
 
       <section className="flex flex-col gap-4 rounded-[20px] bg-card p-6 shadow-card">
         <h2 className="type-h3 text-card-foreground">Scheduler</h2>
@@ -46,6 +119,10 @@ export default function SettingsPage() {
 
       <section className="flex flex-col gap-4 rounded-[20px] bg-card p-6 shadow-card">
         <h2 className="type-h3 text-card-foreground">Your collection</h2>
+        <p className="type-body-sm text-muted-foreground">
+          Decks and cards are the shared library; the reviews, the time and the
+          XP are yours.
+        </p>
         <dl className="grid gap-3 sm:grid-cols-3">
           <Row label="Decks" value={String(totals.decks)} />
           <Row label="Cards" value={String(totals.cards)} />

@@ -3,10 +3,13 @@ import type { Metadata } from "next";
 import { DeckForm } from "@/components/deck-form";
 import { Button } from "@/components/ui/button";
 import { createDeckAction } from "@/lib/actions";
+import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "New deck" };
 
-export default function NewDeckPage() {
+export default async function NewDeckPage() {
+  await requireUser();
+
   return (
     <div className="mx-auto max-w-[720px]">
       <h1 className="type-h1 text-card-foreground">New deck</h1>

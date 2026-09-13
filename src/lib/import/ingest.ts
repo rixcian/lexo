@@ -3,6 +3,7 @@ import "server-only";
 import { and, eq, inArray } from "drizzle-orm";
 import { db, sqlite } from "@/db";
 import { cards, decks, notes } from "@/db/schema";
+import { userIds } from "@/lib/auth/users";
 import { fingerprint } from "@/lib/fingerprint";
 import { attachMedia, storeMedia } from "@/lib/media/store";
 import { MEDIA_FIELDS, type MediaField } from "@/lib/media/types";
@@ -118,6 +119,9 @@ function ingestOne(
   const now = Date.now();
   const fresh = newCardState(new Date(now));
   const templates = deck.reverseCards ? ["forward", "reverse"] : ["forward"];
+  // An imported deck lands in the shared library, so it is scheduled for
+  // everyone - each from new, each on their own row.
+  const owners = userIds();
 
   const pending: {
     row: typeof notes.$inferInsert;
@@ -186,9 +190,14 @@ function ingestOne(
         const noteId = idByFingerprint.get(item.row.fingerprint);
         if (noteId === undefined) continue;
 
-        for (const template of templates) {
-          cardRows.push({ noteId, deckId: deck.id, template, ...fresh });
+        for (const userId of owners) {
+          for (const template of templates) {
+            cardRows.push({ userId, noteId, deckId: deck.id, template, ...fresh });
+          }
         }
+        // Counted per person, not per row: the summary answers "how many cards
+        // did I just get", and every account got the same ones.
+        cardsCreated += templates.length;
 
         if (item.media.length === 0) continue;
         const resolved = media.resolve(item.media);
@@ -200,7 +209,6 @@ function ingestOne(
 
       for (const cardBatch of chunked(cardRows)) {
         db.insert(cards).values(cardBatch).run();
-        cardsCreated += cardBatch.length;
       }
     }
   })();

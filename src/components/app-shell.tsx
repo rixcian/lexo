@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Download, Home, Settings } from "lucide-react";
+import { AccountMenu } from "@/components/account/account-menu";
 import { Mascot } from "@/components/duo/mascot";
 import { StreakChip, XpChip } from "@/components/duo/chips";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -19,14 +20,22 @@ function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
+export interface ShellUser {
+  id: number;
+  username: string;
+}
+
 export function AppShell({
   streakDays,
   streakLit,
+  user,
   xpToday,
   children,
 }: {
   streakDays: number;
   streakLit: boolean;
+  /** Null on the sign-in and registration screens. */
+  user: ShellUser | null;
   xpToday: number;
   children: React.ReactNode;
 }) {
@@ -35,6 +44,25 @@ export function AppShell({
   // A study session owns the whole screen - no chrome to distract from the card.
   if (pathname.startsWith("/study/")) {
     return <>{children}</>;
+  }
+
+  // Signed out there is nowhere to navigate to, so the header keeps only the
+  // wordmark and the theme toggle, and the tab bar goes away entirely.
+  if (!user) {
+    return (
+      <div className="flex min-h-dvh flex-col">
+        <header className="flex h-[72px] shrink-0 items-center justify-between px-4 sm:px-6">
+          <span className="flex items-center gap-2">
+            <Mascot className="size-9" />
+            <span className="type-h3 text-brand">lexo</span>
+          </span>
+          <ThemeToggle />
+        </header>
+        <main className="mx-auto flex w-full max-w-[1280px] flex-1 flex-col px-4 pb-16 sm:px-6">
+          {children}
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -72,6 +100,7 @@ export function AppShell({
             <StreakChip days={streakDays} lit={streakLit} />
             <XpChip xp={xpToday} />
             <ThemeToggle />
+            <AccountMenu userId={user.id} username={user.username} />
           </div>
         </div>
       </header>

@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import { ImportWizard } from "@/components/import/import-wizard";
 import { maxUploadMb } from "@/lib/import/limits";
+import { requireUser } from "@/lib/auth/session";
 import { listDecks } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Import" };
 export const dynamic = "force-dynamic";
 
-export default function ImportPage() {
-  const decks = listDecks(true).map((deck) => ({
+export default async function ImportPage() {
+  const user = await requireUser();
+  const decks = listDecks(user.id, true).map((deck) => ({
     id: deck.id,
     name: deck.name,
   }));
