@@ -5,6 +5,7 @@ import { LogOut, Repeat, UserCog } from "lucide-react";
 import { UserAvatar } from "@/components/account/user-avatar";
 import {
   Menu,
+  MenuGroup,
   MenuGroupLabel,
   MenuItem,
   MenuLinkItem,
@@ -41,18 +42,20 @@ export function AccountMenu({
       </MenuTrigger>
 
       <MenuPopup align="end" className="min-w-52">
-        <MenuGroupLabel className="truncate">
-          Signed in as <span className="text-foreground">{username}</span>
-        </MenuGroupLabel>
-        <MenuSeparator />
-        <MenuLinkItem href="/settings">
-          <UserCog />
-          Account settings
-        </MenuLinkItem>
-        <MenuItem onClick={signOut}>
-          <Repeat />
-          Switch account
-        </MenuItem>
+        <MenuGroup>
+          <MenuGroupLabel className="truncate">
+            Signed in as <span className="text-foreground">{username}</span>
+          </MenuGroupLabel>
+          <MenuSeparator />
+          <MenuLinkItem href="/settings">
+            <UserCog />
+            Account settings
+          </MenuLinkItem>
+          <MenuItem onClick={signOut}>
+            <Repeat />
+            Switch account
+          </MenuItem>
+        </MenuGroup>
         <MenuSeparator />
         <MenuItem onClick={signOut} variant="destructive">
           <LogOut />
