@@ -1,7 +1,7 @@
 import "server-only";
 
 import fs from "node:fs";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cards, decks, notes, reviews, type Deck } from "@/db/schema";
 import { filePath, noteMediaMaps } from "@/lib/media/store";
@@ -54,7 +54,10 @@ export interface DeckExport {
  * note, since a big deck is thousands of rows and the writers want it all in
  * memory anyway.
  */
-export function readDeckForExport(deckId: number): DeckExport | null {
+export function readDeckForExport(
+  userId: number,
+  deckId: number,
+): DeckExport | null {
   const deck = db.select().from(decks).where(eq(decks.id, deckId)).get();
   if (!deck) return null;
 
@@ -65,17 +68,19 @@ export function readDeckForExport(deckId: number): DeckExport | null {
     .orderBy(asc(notes.id))
     .all();
 
+  // The notes are the household's; the schedule and the history written out
+  // with them are the exporting user's own.
   const cardRows = db
     .select()
     .from(cards)
-    .where(eq(cards.deckId, deckId))
+    .where(and(eq(cards.userId, userId), eq(cards.deckId, deckId)))
     .orderBy(asc(cards.id))
     .all();
 
   const reviewRows = db
     .select()
     .from(reviews)
-    .where(eq(reviews.deckId, deckId))
+    .where(and(eq(reviews.userId, userId), eq(reviews.deckId, deckId)))
     .orderBy(asc(reviews.reviewedAt))
     .all();
 

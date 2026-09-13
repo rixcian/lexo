@@ -1,3 +1,4 @@
+import { currentUser } from "@/lib/auth/session";
 import { toApkg } from "@/lib/export/apkg";
 import { toCsv } from "@/lib/export/csv";
 import { exportFilename, readDeckForExport } from "@/lib/export/deck";
@@ -13,13 +14,18 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  // A download is not a page, so there is nothing to redirect to - say no.
+  const user = await currentUser();
+  if (!user) return new Response("Sign in first", { status: 401 });
+
   const { id } = await params;
   const deckId = Number(id);
   if (!Number.isInteger(deckId)) {
     return new Response("Not found", { status: 404 });
   }
 
-  const data = readDeckForExport(deckId);
+  // The schedule and history written out are this user's own.
+  const data = readDeckForExport(user.id, deckId);
   if (!data) return new Response("Not found", { status: 404 });
 
   const format = new URL(request.url).searchParams.get("format") ?? "apkg";

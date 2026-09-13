@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { StudySession } from "@/components/study/study-session";
+import { requireUser } from "@/lib/auth/session";
 import { buildQueue, getDeck } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export async function generateMetadata({
 }
 
 export default async function StudyPage({ params }: PageProps) {
+  const user = await requireUser();
   const { deckId } = await params;
   const deck = getDeck(Number(deckId));
   if (!deck) notFound();
@@ -29,7 +31,7 @@ export default async function StudyPage({ params }: PageProps) {
       deckColorName={deck.color}
       frontLang={deck.frontLang}
       backLang={deck.backLang}
-      queue={buildQueue(deck)}
+      queue={buildQueue(user.id, deck)}
     />
   );
 }

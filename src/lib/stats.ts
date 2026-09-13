@@ -22,7 +22,11 @@ function dayKeyExpr() {
   return sql<string>`date((${reviews.reviewedAt} - ${4 * 3600_000}) / 1000, 'unixepoch', 'localtime')`;
 }
 
-export function reviewsByDay(sinceDays = 365, deckId?: number): DayBucket[] {
+export function reviewsByDay(
+  userId: number,
+  sinceDays = 365,
+  deckId?: number,
+): DayBucket[] {
   const since = startOfStudyDay().getTime() - (sinceDays - 1) * DAY_MS;
   const key = dayKeyExpr();
 
@@ -36,6 +40,7 @@ export function reviewsByDay(sinceDays = 365, deckId?: number): DayBucket[] {
     .from(reviews)
     .where(
       and(
+        eq(reviews.userId, userId),
         gte(reviews.reviewedAt, since),
         deckId ? eq(reviews.deckId, deckId) : undefined,
       ),
@@ -52,8 +57,14 @@ export function reviewsByDay(sinceDays = 365, deckId?: number): DayBucket[] {
 }
 
 /** Dense day series (zero-filled) ending today - what the heatmap renders. */
-export function heatmap(days = 365, deckId?: number): DayBucket[] {
-  const byDate = new Map(reviewsByDay(days, deckId).map((d) => [d.date, d]));
+export function heatmap(
+  userId: number,
+  days = 365,
+  deckId?: number,
+): DayBucket[] {
+  const byDate = new Map(
+    reviewsByDay(userId, days, deckId).map((d) => [d.date, d]),
+  );
   const today = startOfStudyDay();
   const out: DayBucket[] = [];
 
@@ -72,8 +83,8 @@ export interface Streak {
   litToday: boolean;
 }
 
-export function streak(deckId?: number): Streak {
-  const days = reviewsByDay(3650, deckId)
+export function streak(userId: number, deckId?: number): Streak {
+  const days = reviewsByDay(userId, 3650, deckId)
     .filter((d) => d.count > 0)
     .map((d) => d.date)
     .sort();
@@ -117,11 +128,19 @@ export interface StateDistribution {
   total: number;
 }
 
-export function stateDistribution(deckId?: number): StateDistribution {
+export function stateDistribution(
+  userId: number,
+  deckId?: number,
+): StateDistribution {
   const rows = db
     .select({ state: cards.state, suspended: cards.suspended, n: count() })
     .from(cards)
-    .where(deckId ? eq(cards.deckId, deckId) : undefined)
+    .where(
+      and(
+        eq(cards.userId, userId),
+        deckId ? eq(cards.deckId, deckId) : undefined,
+      ),
+    )
     .groupBy(cards.state, cards.suspended)
     .all();
 
@@ -152,7 +171,7 @@ export function stateDistribution(deckId?: number): StateDistribution {
  * True retention: of the cards that were already in the Review state, what
  * share were recalled (Hard/Good/Easy). Again on a mature card is the lapse.
  */
-export function retention(sinceDays = 30, deckId?: number) {
+export function retention(userId: number, sinceDays = 30, deckId?: number) {
   const since = startOfStudyDay().getTime() - (sinceDays - 1) * DAY_MS;
 
   const row = db
@@ -163,6 +182,7 @@ export function retention(sinceDays = 30, deckId?: number) {
     .from(reviews)
     .where(
       and(
+        eq(reviews.userId, userId),
         gte(reviews.reviewedAt, since),
         eq(reviews.state, State.Review),
         deckId ? eq(reviews.deckId, deckId) : undefined,
@@ -175,13 +195,18 @@ export function retention(sinceDays = 30, deckId?: number) {
   return { total, passed, rate: total === 0 ? null : passed / total };
 }
 
-export function ratingBreakdown(sinceDays = 30, deckId?: number) {
+export function ratingBreakdown(
+  userId: number,
+  sinceDays = 30,
+  deckId?: number,
+) {
   const since = startOfStudyDay().getTime() - (sinceDays - 1) * DAY_MS;
   const rows = db
     .select({ rating: reviews.rating, n: count() })
     .from(reviews)
     .where(
       and(
+        eq(reviews.userId, userId),
         gte(reviews.reviewedAt, since),
         deckId ? eq(reviews.deckId, deckId) : undefined,
       ),
@@ -199,7 +224,7 @@ export function ratingBreakdown(sinceDays = 30, deckId?: number) {
   return out;
 }
 
-export function todaySummary(deckId?: number) {
+export function todaySummary(userId: number, deckId?: number) {
   const dayStart = startOfStudyDay().getTime();
   const row = db
     .select({
@@ -210,6 +235,7 @@ export function todaySummary(deckId?: number) {
     .from(reviews)
     .where(
       and(
+        eq(reviews.userId, userId),
         gte(reviews.reviewedAt, dayStart),
         deckId ? eq(reviews.deckId, deckId) : undefined,
       ),
@@ -225,35 +251,47 @@ export function todaySummary(deckId?: number) {
   };
 }
 
-export function lifetimeTotals() {
+/**
+ * Decks and notes are the shared library, so those two are counted whole; the
+ * cards and the review log are one person's own.
+ */
+export function lifetimeTotals(userId: number) {
   const reviewRow = db
     .select({
       n: count(),
       durationMs: sql<number>`coalesce(sum(${reviews.durationMs}), 0)`,
     })
     .from(reviews)
+    .where(eq(reviews.userId, userId))
     .get();
 
   return {
     reviews: reviewRow?.n ?? 0,
     durationMs: Number(reviewRow?.durationMs ?? 0),
     xp: (reviewRow?.n ?? 0) * XP_PER_REVIEW,
-    cards: db.select({ n: count() }).from(cards).get()?.n ?? 0,
+    cards:
+      db
+        .select({ n: count() })
+        .from(cards)
+        .where(eq(cards.userId, userId))
+        .get()?.n ?? 0,
     notes: db.select({ n: count() }).from(notes).get()?.n ?? 0,
     decks: db.select({ n: count() }).from(decks).get()?.n ?? 0,
   };
 }
 
-export function perDeckTotals() {
+export function perDeckTotals(userId: number) {
   return db
     .select({
       deck: decks,
       cardCount: count(cards.id),
-      reviewCount: sql<number>`(select count(*) from ${reviews} where ${reviews.deckId} = ${decks.id})`,
+      reviewCount: sql<number>`(select count(*) from ${reviews} where ${reviews.deckId} = ${decks.id} and ${reviews.userId} = ${userId})`,
       matureCount: sql<number>`sum(case when ${cards.state} = 2 and ${cards.scheduledDays} >= 21 then 1 else 0 end)`,
     })
     .from(decks)
-    .leftJoin(cards, eq(cards.deckId, decks.id))
+    // Joined on the user as well, so a deck the other person is further into
+    // still shows this person's own counts (zero, if they have not started).
+    .leftJoin(cards, and(eq(cards.deckId, decks.id), eq(cards.userId, userId)))
     .groupBy(decks.id)
     .all()
     .map((row) => ({

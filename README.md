@@ -22,7 +22,7 @@ your own review log - all in a single SQLite file you own.
 
 ## What it is
 
-A flashcard app for one person and one server. A deck is nothing more than a
+A flashcard app for a household and one server. A deck is nothing more than a
 front, a back and two free-form language labels, so Spanish vocabulary, kanji
 readings and world capitals all sit side by side under the same scheduler.
 
@@ -35,8 +35,11 @@ readings and world capitals all sit side by side under the same scheduler.
   CSV.
 - **Stats from the raw review log.** Nothing is cached or denormalised, so the
   numbers are always the truth.
+- **Shared decks, separate progress.** A couple of accounts, a name each, no
+  password. The library is shared; the schedule, the streak and the stats are
+  per person.
 - **Installable as a PWA.** Manifest, maskable icons, offline shell.
-- **One file to back up.** No Postgres, no Redis, no account, no cloud.
+- **One file to back up.** No Postgres, no Redis, no cloud.
 
 ## Quick start
 
@@ -47,8 +50,8 @@ docker run -d --name lexo -p 3000:3000 \
   ghcr.io/rixcian/lexo:latest
 ```
 
-Open <http://localhost:3000>. Migrations run on first boot; there is nothing
-else to configure.
+Open <http://localhost:3000>. Migrations run on first boot; pick a name on the
+screen that greets you and that is the whole setup.
 
 Prefer compose? [`docker-compose.portainer.yml`](docker-compose.portainer.yml)
 is ready to paste into Portainer's web editor.
@@ -193,6 +196,32 @@ scheduled days - and every statistic is derived from that table.
 Target retention is 0.9 and the maximum interval is 100 years. Both are shown
 on the Settings page.
 
+## Accounts
+
+The first person to open a fresh install picks a name and is signed in. If the
+collection predates accounts, that first name inherits all of it - decks,
+cards, scheduling, review history, streak - so nothing is lost on upgrade.
+
+Add the second person from **Settings -> Add someone**. Adding an account does
+not sign you out of your own; they pick their name the next time they open the
+app, on their phone or after a **Switch account**.
+
+What is shared and what is not:
+
+| Shared by everyone | Kept per account |
+|---|---|
+| Decks and their settings | Card scheduling (due date, stability, lapses) |
+| Notes, their text and tags | The review log |
+| Images and audio | Streak, XP, retention, heatmap, forecast |
+| Imports (a deck imported once shows up for both) | Suspended cards |
+
+So you can both work through the same deck at your own pace. A card added or
+imported by either of you is scheduled from new for everyone; deleting a note
+or a deck removes it for everyone, since the library itself is shared.
+
+Sessions are stored server-side and the cookie holds only a random token. There
+is no password to reset, and no account deletion - two people rarely need one.
+
 ## Deploying
 
 ### Portainer
@@ -259,8 +288,9 @@ That publishes `https://<host>.<tailnet>.ts.net` with a real Let's Encrypt
 certificate, and the app installs from there on a phone. Off the tailnet,
 terminate TLS with Caddy, Traefik or a Cloudflare Tunnel instead.
 
-**There is no login.** Keep it on the tailnet or the LAN - anyone who can reach
-the port can read and edit your cards.
+**A name is not a password.** Signing in is picking your name off a list, which
+tells two people apart but keeps nobody out. Keep the app on the tailnet or the
+LAN - anyone who can reach the port can sign in as either of you.
 
 ## Configuration
 
@@ -323,7 +353,7 @@ to publish a tag that disagrees with it.
 
 ```bash
 npm version minor --no-git-tag-version
-git commit -am "release: v0.2.0" && git tag -a v0.2.0 -m "v0.2.0" && git push --follow-tags
+git commit -am "release: v0.3.0" && git tag -a v0.3.0 -m "v0.3.0" && git push --follow-tags
 ```
 
 | You push | Image tags |

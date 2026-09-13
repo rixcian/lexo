@@ -3,14 +3,16 @@ import { Download, Plus, Sparkles } from "lucide-react";
 import { DeckCard } from "@/components/duo/deck-card";
 import { Mascot } from "@/components/duo/mascot";
 import { Button } from "@/components/ui/button";
+import { requireUser } from "@/lib/auth/session";
 import { listDecks } from "@/lib/queries";
 import { todaySummary } from "@/lib/stats";
 
 export const dynamic = "force-dynamic";
 
-export default function HomePage() {
-  const decks = listDecks();
-  const today = todaySummary();
+export default async function HomePage() {
+  const user = await requireUser();
+  const decks = listDecks(user.id);
+  const today = todaySummary(user.id);
   const due = decks.reduce((n, deck) => n + deck.counts.total, 0);
   const firstDue = decks.find((deck) => deck.counts.total > 0);
 

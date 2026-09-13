@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import { revalidatePath } from "next/cache";
+import { requireUser } from "@/lib/auth/session";
 import { parseCsv, type CsvOptions } from "./csv";
 import { ingest, type IngestOptions, type MediaLoader } from "./ingest";
 import { buildCsvPreview } from "./upload";
@@ -14,6 +15,8 @@ export async function previewImportAction(
   options: CsvOptions,
 ): Promise<ImportPreviewResult> {
   try {
+    await requireUser();
+
     const staged = read(token);
     if (staged.kind !== "csv") {
       return { ok: false, error: "Only CSV uploads can be remapped." };
@@ -35,6 +38,8 @@ export async function confirmImportAction(
   options: IngestOptions & { csv?: CsvOptions },
 ): Promise<ImportConfirmResult> {
   try {
+    await requireUser();
+
     const staged = read(token);
     const result =
       staged.kind === "csv"

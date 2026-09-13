@@ -15,6 +15,13 @@
       "when": 1789241833132,
       "tag": "0001_wooden_vulture",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789274943094,
+      "tag": "0002_many_titanium_man",
+      "breakpoints": true
     }
   ]
 }

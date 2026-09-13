@@ -7,6 +7,7 @@ import { DeckExport } from "@/components/deck-export";
 import { DeckForm } from "@/components/deck-form";
 import { Button } from "@/components/ui/button";
 import { updateDeckAction } from "@/lib/actions";
+import { requireUser } from "@/lib/auth/session";
 import { deckMediaCount, getDeck, getDeckCounts } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ export async function generateMetadata({
 }
 
 export default async function DeckSettingsPage({ params }: PageProps) {
+  const user = await requireUser();
   const { id } = await params;
   const deck = getDeck(Number(id));
   if (!deck) notFound();
@@ -53,7 +55,7 @@ export default async function DeckSettingsPage({ params }: PageProps) {
 
       <DeckExport
         deckId={deck.id}
-        cardTotal={getDeckCounts(deck).cardTotal}
+        cardTotal={getDeckCounts(user.id, deck).cardTotal}
         mediaFiles={deckMediaCount(deck.id)}
       />
 

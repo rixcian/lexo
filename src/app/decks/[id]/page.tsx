@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DECK_COLOR_CLASS, deckColor } from "@/lib/colors";
+import { requireUser } from "@/lib/auth/session";
 import { browseCards, getDeck, getDeckCounts, safeTags } from "@/lib/queries";
 import { STATE_LABEL } from "@/lib/scheduler";
 import { cn } from "@/lib/utils";
@@ -38,15 +39,16 @@ export async function generateMetadata({
 }
 
 export default async function DeckPage({ params, searchParams }: PageProps) {
+  const user = await requireUser();
   const { id } = await params;
   const { q, page } = await searchParams;
 
   const deck = getDeck(Number(id));
   if (!deck) notFound();
 
-  const counts = getDeckCounts(deck);
+  const counts = getDeckCounts(user.id, deck);
   const color = DECK_COLOR_CLASS[deckColor(deck.color)];
-  const browse = browseCards(deck.id, {
+  const browse = browseCards(user.id, deck.id, {
     search: q?.trim() || undefined,
     page: Number(page) || 1,
   });
